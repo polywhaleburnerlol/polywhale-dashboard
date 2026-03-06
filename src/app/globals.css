@@ -1,26 +1,47 @@
-@import "tailwindcss";
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --font-syne: "Syne", sans-serif;
+    --font-geist-mono: "Geist Mono", monospace;
+  }
+
+  /* Smooth scrolling */
+  html {
+    scroll-behavior: smooth;
+  }
+
+  /* Custom scrollbar — zinc palette */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: theme("colors.zinc.900");
+  }
+  ::-webkit-scrollbar-thumb {
+    background: theme("colors.zinc.700");
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: theme("colors.zinc.600");
+  }
+
+  /* Selection color */
+  ::selection {
+    background-color: theme("colors.amber.400");
+    color: theme("colors.zinc.950");
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@layer utilities {
+  /* Convenience aliases used across the app */
+  .font-display {
+    font-family: var(--font-syne);
+  }
+  .font-mono-app {
+    font-family: var(--font-geist-mono);
+  }
 }
