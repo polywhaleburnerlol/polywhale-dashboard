@@ -1,47 +1,72 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+/*
+ * globals.css — Tailwind CSS v4 compatible
+ *
+ * v4 breaking changes addressed here:
+ *   1. @tailwind directives → single @import "tailwindcss"
+ *   2. theme() function     → CSS custom properties (var(--color-*))
+ *   3. tailwind.config.mjs  → @theme block in this file
+ */
 
+@import "tailwindcss";
+
+/* ── Theme registration ─────────────────────────────────────────────────────
+   In v4, design tokens that used to live in tailwind.config.mjs are declared
+   here with @theme. Tailwind reads these and generates the corresponding
+   utility classes automatically.
+   ─────────────────────────────────────────────────────────────────────────── */
+@theme {
+  /* Font family variables — consumed by `font-sans`, `font-mono`, etc.
+     These match the CSS variables injected by next/font/google in layout.tsx */
+  --font-family-sans:    var(--font-geist), ui-sans-serif, system-ui, sans-serif;
+  --font-family-mono:    var(--font-geist-mono), ui-monospace, monospace;
+  --font-family-display: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* ── Base styles ─────────────────────────────────────────────────────────────
+   Raw CSS here — no theme() calls, only var(--color-*) which v4 exposes
+   automatically from its default palette.
+   ─────────────────────────────────────────────────────────────────────────── */
 @layer base {
-  :root {
-    --font-syne: "Syne", sans-serif;
-    --font-geist-mono: "Geist Mono", monospace;
-  }
-
-  /* Smooth scrolling */
   html {
     scroll-behavior: smooth;
+    background-color: var(--color-zinc-950);
+    color: var(--color-zinc-100);
   }
 
-  /* Custom scrollbar — zinc palette */
+  /* Scrollbar — zinc palette via v4 CSS variables */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
+
   ::-webkit-scrollbar-track {
-    background: theme("colors.zinc.900");
-  }
-  ::-webkit-scrollbar-thumb {
-    background: theme("colors.zinc.700");
-    border-radius: 9999px;
-  }
-  ::-webkit-scrollbar-thumb:hover {
-    background: theme("colors.zinc.600");
+    background-color: var(--color-zinc-900);
   }
 
-  /* Selection color */
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--color-zinc-700);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--color-zinc-600);
+  }
+
+  /* Selection — amber on zinc-950 */
   ::selection {
-    background-color: theme("colors.amber.400");
-    color: theme("colors.zinc.950");
+    background-color: var(--color-amber-400);
+    color: var(--color-zinc-950);
   }
 }
 
-@layer utilities {
-  /* Convenience aliases used across the app */
-  .font-display {
-    font-family: var(--font-syne);
-  }
-  .font-mono-app {
-    font-family: var(--font-geist-mono);
-  }
+/* ── Utility aliases ─────────────────────────────────────────────────────────
+   Custom utilities that map the three next/font variables to named classes.
+   `font-display` → Syne   |   `font-mono-app` → Geist Mono
+   ─────────────────────────────────────────────────────────────────────────── */
+@utility font-display {
+  font-family: var(--font-syne), ui-sans-serif, system-ui, sans-serif;
+}
+
+@utility font-mono-app {
+  font-family: var(--font-geist-mono), ui-monospace, monospace;
 }
