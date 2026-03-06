@@ -3,11 +3,9 @@
 /**
  * ActiveNavLink
  *
- * Isolated "use client" component: reads the current pathname and applies
- * active amber styling to the matching sidebar link.
- *
- * Keeping this tiny file as the only client boundary means DashboardLayout
- * stays a pure Server Component — no unnecessary JS shipped for the shell.
+ * Minimal "use client" boundary. Reads pathname, sets data-active and
+ * aria-current, then forwards className so the parent layout can supply
+ * its own CSS class (e.g. "pw-nav-link") for hover/active styling.
  */
 
 import Link from "next/link";
@@ -16,36 +14,23 @@ import type { ReactNode } from "react";
 
 type Props = {
   href: string;
-  /**
-   * exact=true  → active only when pathname === href   (use for /dashboard)
-   * exact=false → active when pathname starts with href (use for nested routes)
-   */
+  /** exact=true → active only when pathname === href */
   exact?: boolean;
+  /** Allow parent to inject its own CSS class for hover/active styles */
+  className?: string;
   children: ReactNode;
 };
 
-export function ActiveNavLink({ href, exact = false, children }: Props) {
+export function ActiveNavLink({ href, exact = false, className = "", children }: Props) {
   const pathname = usePathname();
   const isActive = exact ? pathname === href : pathname.startsWith(href);
 
   return (
     <Link
       href={href}
+      data-active={isActive}
       aria-current={isActive ? "page" : undefined}
-      className={[
-        // Layout & typography
-        "flex items-center gap-3 rounded-lg px-3 py-2.5",
-        "text-sm font-medium transition-all duration-150",
-        // Default state
-        "text-zinc-400 hover:bg-zinc-800/70 hover:text-zinc-100",
-        // Icon colour (first SVG child)
-        "[&>svg]:shrink-0 [&>svg]:transition-colors",
-        isActive
-          // Active state — amber tint
-          ? "bg-amber-400/10 text-amber-300 [&>svg]:text-amber-400"
-          // Inactive icon colour + hover
-          : "[&>svg]:text-zinc-500 hover:[&>svg]:text-zinc-300",
-      ].join(" ")}
+      className={className}
     >
       {children}
     </Link>
