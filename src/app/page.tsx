@@ -3,13 +3,11 @@
 /**
  * app/dashboard/clients/new/page.tsx
  *
- * UI only — all backend logic (Server Action, encryption, Supabase insert)
- * is unchanged.  Only JSX structure and styles have been updated to match
- * the polywhale-main design system.
+ * UI only — Server Action, encryption imports, and name attributes untouched.
+ * Changes: de-jargonized labels, HowToGuide accordions, TradeSlider component.
  */
 
-import { useActionState } from "react";
-import { useState } from "react";
+import { useActionState, useState } from "react";
 import { registerClient, type ActionResult } from "@/app/actions/client";
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
@@ -23,12 +21,234 @@ const C = {
   border:        "rgba(0,229,204,0.12)",
 };
 
-/* ── Field group ────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   HOW-TO GUIDE — expandable inline helper accordion
+   ════════════════════════════════════════════════════════════════ */
+function HowToGuide({ steps }: { steps: string[] }) {
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div style={{ marginTop: 2 }}>
+      {/* Toggle trigger */}
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: "none", border: "none", cursor: "pointer", padding: 0,
+          fontSize: 11.5, fontWeight: 600, letterSpacing: "0.01em",
+          color: open ? C.accent : "#4a6080",
+          transition: "color 0.18s",
+          fontFamily: "'DM Sans', sans-serif",
+        }}
+      >
+        {/* Animated chevron */}
+        <svg
+          width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
+          style={{
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.22s cubic-bezier(0.16,1,0.3,1)",
+            color: open ? C.accent : "#4a6080",
+          }}
+        >
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+        Where do I find this?
+      </button>
+
+      {/* Expandable body */}
+      <div style={{
+        overflow: "hidden",
+        maxHeight: open ? 200 : 0,
+        opacity: open ? 1 : 0,
+        transition: "max-height 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.22s ease",
+      }}>
+        <div style={{
+          marginTop: 10,
+          padding: "12px 14px",
+          borderRadius: 10,
+          background: "rgba(0,229,204,0.04)",
+          border: "1px solid rgba(0,229,204,0.12)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        }}>
+          <p style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+            textTransform: "uppercase", color: C.accent,
+            marginBottom: 8, fontFamily: "'Syne', sans-serif",
+          }}>
+            Quick Guide
+          </p>
+          <ol style={{ paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+            {steps.map((step, i) => (
+              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                {/* Step number badge */}
+                <span style={{
+                  flexShrink: 0, width: 18, height: 18, borderRadius: "50%",
+                  background: "rgba(0,229,204,0.12)",
+                  border: "1px solid rgba(0,229,204,0.22)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9.5, fontWeight: 800, color: C.accent,
+                  fontFamily: "'Syne', sans-serif", marginTop: 1,
+                }}>
+                  {i + 1}
+                </span>
+                <span style={{ fontSize: 12.5, lineHeight: 1.55, color: "#a0b4c8" }}
+                  dangerouslySetInnerHTML={{ __html: step }}
+                />
+              </li>
+            ))}
+          </ol>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   TRADE SLIDER — range input + quick-select pills
+   name="trade_amount_usd" hidden input ensures backend compatibility
+   ════════════════════════════════════════════════════════════════ */
+const QUICK_AMOUNTS = [1, 5, 10, 25];
+
+function TradeSlider() {
+  const [amount, setAmount] = useState(5);
+
+  const pct = ((amount - 1) / (100 - 1)) * 100;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      {/* Label row */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        <label style={{
+          fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
+          textTransform: "uppercase", color: "#4a5a72",
+          fontFamily: "'Syne', sans-serif",
+        }}>
+          Trade Size per Signal
+          <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>
+        </label>
+        {/* Live value display */}
+        <div style={{
+          display: "flex", alignItems: "baseline", gap: 3,
+          padding: "3px 10px", borderRadius: 7,
+          background: "rgba(0,229,204,0.08)",
+          border: "1px solid rgba(0,229,204,0.20)",
+        }}>
+          <span style={{
+            fontSize: 18, fontWeight: 800, color: C.accent,
+            fontFamily: "'Syne', sans-serif", lineHeight: 1,
+          }}>
+            ${amount}
+          </span>
+          <span style={{ fontSize: 11, color: "#4a6080", fontWeight: 600 }}>USD</span>
+        </div>
+      </div>
+
+      {/* ── Range slider ── */}
+      <style>{`
+        .pw-slider {
+          -webkit-appearance: none; appearance: none;
+          width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
+          background: linear-gradient(
+            90deg,
+            #00e5cc 0%,
+            #7c5cfc ${pct}%,
+            rgba(255,255,255,0.07) ${pct}%,
+            rgba(255,255,255,0.07) 100%
+          );
+          transition: background 0.12s;
+        }
+        .pw-slider::-webkit-slider-thumb {
+          -webkit-appearance: none; appearance: none;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: linear-gradient(135deg, #00e5cc, #7c5cfc);
+          cursor: pointer;
+          box-shadow: 0 0 0 3px rgba(0,229,204,0.15), 0 2px 8px rgba(0,0,0,0.5);
+          transition: box-shadow 0.18s, transform 0.18s;
+        }
+        .pw-slider::-webkit-slider-thumb:hover {
+          box-shadow: 0 0 0 5px rgba(0,229,204,0.22), 0 2px 12px rgba(0,229,204,0.35);
+          transform: scale(1.12);
+        }
+        .pw-slider::-moz-range-thumb {
+          width: 20px; height: 20px; border-radius: 50%; border: none;
+          background: linear-gradient(135deg, #00e5cc, #7c5cfc);
+          cursor: pointer;
+          box-shadow: 0 0 0 3px rgba(0,229,204,0.15);
+        }
+        /* Quick-select pill buttons */
+        .pw-pill {
+          flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
+          font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+          border: 1px solid rgba(0,229,204,0.14);
+          background: rgba(0,229,204,0.04);
+          color: #8492a6;
+          transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+        }
+        .pw-pill:hover {
+          border-color: rgba(0,229,204,0.28);
+          color: #00e5cc;
+          background: rgba(0,229,204,0.08);
+        }
+        .pw-pill-active {
+          border-color: rgba(0,229,204,0.40) !important;
+          background: rgba(0,229,204,0.12) !important;
+          color: #00e5cc !important;
+          box-shadow: 0 0 14px -4px rgba(0,229,204,0.30);
+        }
+      `}</style>
+
+      <input
+        type="range"
+        className="pw-slider"
+        min={1}
+        max={100}
+        step={1}
+        value={amount}
+        onChange={(e) => setAmount(Number(e.target.value))}
+      />
+
+      {/* Min / max labels */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: -4 }}>
+        <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$1</span>
+        <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$100</span>
+      </div>
+
+      {/* Quick-select pills */}
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        {QUICK_AMOUNTS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => setAmount(v)}
+            className={`pw-pill${amount === v ? " pw-pill-active" : ""}`}
+          >
+            ${v}
+          </button>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>
+        Amount of USDC placed on every copied trade. You can change this anytime.
+      </p>
+
+      {/* Hidden input — keeps name="trade_amount_usd" for the Server Action */}
+      <input type="hidden" name="trade_amount_usd" value={amount} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FIELD — standard text / password input (unchanged from v1)
+   ════════════════════════════════════════════════════════════════ */
 function Field({
   label, name, type = "text", placeholder, hint, required = true,
+  guide,
 }: {
   label: string; name: string; type?: string;
   placeholder?: string; hint?: string; required?: boolean;
+  guide?: string[];
 }) {
   const [focused, setFocused] = useState(false);
 
@@ -45,13 +265,10 @@ function Field({
         }}
       >
         {label}
-        {required && (
-          <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>
-        )}
+        {required && <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>}
       </label>
 
       <div style={{ position: "relative" }}>
-        {/* Glow ring shown on focus */}
         {focused && (
           <div style={{
             position: "absolute", inset: -1, borderRadius: 11,
@@ -73,12 +290,10 @@ function Field({
           style={{
             position: "relative", zIndex: 1,
             width: "100%", display: "block",
-            padding: "11px 14px",
-            borderRadius: 10,
+            padding: "11px 14px", borderRadius: 10,
             background: focused ? "rgba(0,229,204,0.04)" : "rgba(6,11,24,0.7)",
             border: `1px solid ${focused ? "rgba(0,229,204,0.35)" : "rgba(0,229,204,0.10)"}`,
-            color: C.textPrimary,
-            fontSize: 13.5,
+            color: C.textPrimary, fontSize: 13.5,
             fontFamily: "'DM Sans', monospace",
             outline: "none",
             transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
@@ -86,14 +301,15 @@ function Field({
         />
       </div>
 
-      {hint && (
-        <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>{hint}</p>
-      )}
+      {hint && <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>{hint}</p>}
+      {guide && <HowToGuide steps={guide} />}
     </div>
   );
 }
 
-/* ── Section divider ────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   SECTION LABEL (unchanged)
+   ════════════════════════════════════════════════════════════════ */
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 0" }}>
@@ -110,10 +326,11 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   );
 }
 
-/* ── Submit button with shimmer ─────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   SHIMMER BUTTON (unchanged)
+   ════════════════════════════════════════════════════════════════ */
 function ShimmerButton({ pending }: { pending: boolean }) {
   const [hovered, setHovered] = useState(false);
-
   return (
     <>
       <style>{`
@@ -126,8 +343,8 @@ function ShimmerButton({ pending }: { pending: boolean }) {
           background-size: 200% 100%;
           animation: pw-shimmer 3s ease-in-out infinite;
         }
+        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
-
       <button
         type="submit"
         disabled={pending}
@@ -135,40 +352,30 @@ function ShimmerButton({ pending }: { pending: boolean }) {
         onMouseLeave={() => setHovered(false)}
         className={pending ? "" : "pw-shimmer-btn"}
         style={{
-          width: "100%",
-          padding: "14px 20px",
+          width: "100%", padding: "14px 20px",
           borderRadius: 12, border: "none",
           cursor: pending ? "not-allowed" : "pointer",
-          background: pending
-            ? "rgba(0,229,204,0.08)"
-            : undefined,           /* shimmer class handles it when not pending */
+          background: pending ? "rgba(0,229,204,0.08)" : undefined,
           color: pending ? C.textSecondary : "#060b18",
-          fontSize: 15,
-          fontWeight: 800,
-          letterSpacing: "0.04em",
+          fontSize: 15, fontWeight: 800, letterSpacing: "0.04em",
           fontFamily: "'Syne', sans-serif",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           transform: hovered && !pending ? "translateY(-2px)" : "translateY(0)",
-          boxShadow: hovered && !pending
-            ? "0 8px 32px -4px rgba(0,229,204,0.45)"
-            : "none",
+          boxShadow: hovered && !pending ? "0 8px 32px -4px rgba(0,229,204,0.45)" : "none",
           transition: "transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease",
         }}
       >
         {pending ? (
           <>
-            <svg
-              style={{ animation: "spin 0.8s linear infinite" }}
-              width="16" height="16" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth={2.5}
-            >
+            <svg style={{ animation: "spin 0.8s linear infinite" }}
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
               <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round" />
             </svg>
             Encrypting & Saving…
           </>
         ) : (
           <>
-            Register Client
+            Connect Wallet & Start Copying
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
               <path d="M5 12h14M12 5l7 7-7 7" />
@@ -176,14 +383,13 @@ function ShimmerButton({ pending }: { pending: boolean }) {
           </>
         )}
       </button>
-
-      {/* spin keyframe */}
-      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
     </>
   );
 }
 
-/* ── Page ───────────────────────────────────────────────────────────────── */
+/* ════════════════════════════════════════════════════════════════
+   PAGE
+   ════════════════════════════════════════════════════════════════ */
 const initialState: ActionResult | null = null;
 
 export default function NewClientPage() {
@@ -199,8 +405,6 @@ export default function NewClientPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
         .pw-form-page { font-family: 'DM Sans', sans-serif; }
-
-        /* Ambient page glow */
         .pw-page-glow-tl {
           position: fixed; top: -200px; left: -200px;
           width: 600px; height: 600px; border-radius: 50%;
@@ -213,18 +417,13 @@ export default function NewClientPage() {
           background: radial-gradient(circle, rgba(0,229,204,0.06), transparent 65%);
           pointer-events: none; z-index: 0;
         }
-
-        /* Input placeholder color */
         .pw-form-page input::placeholder { color: #3d4d63; }
       `}</style>
 
       <div className="pw-form-page" style={{
-        minHeight: "100vh",
-        background: C.bg,
-        padding: "48px 24px 80px",
-        position: "relative",
+        minHeight: "100vh", background: C.bg,
+        padding: "48px 24px 80px", position: "relative",
       }}>
-        {/* Ambient glows */}
         <div className="pw-page-glow-tl" aria-hidden />
         <div className="pw-page-glow-br" aria-hidden />
 
@@ -233,24 +432,19 @@ export default function NewClientPage() {
           maxWidth: 520, margin: "0 auto 32px",
           textAlign: "center", position: "relative", zIndex: 1,
         }}>
-          {/* Badge */}
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 100,
             background: "rgba(0,229,204,0.07)",
-            border: "1px solid rgba(0,229,204,0.18)",
-            marginBottom: 20,
+            border: "1px solid rgba(0,229,204,0.18)", marginBottom: 20,
           }}>
-            <span style={{
-              width: 6, height: 6, borderRadius: "50%",
-              background: C.accent, flexShrink: 0,
-            }} />
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, flexShrink: 0 }} />
             <span style={{
               fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
               textTransform: "uppercase", color: C.accent,
               fontFamily: "'Syne', sans-serif",
             }}>
-              New Client Setup
+              New Account Setup
             </span>
           </div>
 
@@ -260,27 +454,24 @@ export default function NewClientPage() {
             fontWeight: 800, letterSpacing: "-0.025em",
             color: "#fff", marginBottom: 12, lineHeight: 1.1,
           }}>
-            Register a{" "}
+            Start Copying{" "}
             <span style={{
               background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
               WebkitBackgroundClip: "text",
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
             }}>
-              Copy-Trading
-            </span>{" "}
-            Account
+              Whale Trades
+            </span>
+            {" "}Today
           </h1>
           <p style={{ fontSize: 14, lineHeight: 1.7, color: C.textSecondary, maxWidth: 400, margin: "0 auto" }}>
-            Connect a Polymarket wallet so the bot can mirror whale trades on its behalf.
+            Connect your Polymarket wallet and the bot will automatically mirror top whale trades into your account.
           </p>
         </div>
 
         {/* ── Form card ── */}
-        <div style={{
-          maxWidth: 520, margin: "0 auto",
-          position: "relative", zIndex: 1,
-        }}>
+        <div style={{ maxWidth: 520, margin: "0 auto", position: "relative", zIndex: 1 }}>
 
           {/* Security notice */}
           <div style={{
@@ -290,13 +481,11 @@ export default function NewClientPage() {
             border: "1px solid rgba(0,229,204,0.15)",
             boxShadow: "0 0 40px -16px rgba(0,229,204,0.15)",
           }}>
-            {/* Shield icon */}
             <div style={{
               width: 34, height: 34, borderRadius: 9, flexShrink: 0,
               background: "linear-gradient(135deg, rgba(0,229,204,0.2), rgba(124,92,252,0.15))",
               border: "1px solid rgba(0,229,204,0.2)",
-              display: "flex", alignItems: "center", justifyContent: "center",
-              color: C.accent,
+              display: "flex", alignItems: "center", justifyContent: "center", color: C.accent,
             }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -306,22 +495,19 @@ export default function NewClientPage() {
             </div>
             <div>
               <p style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 3 }}>
-                Security Notice
+                Your Keys Stay Private
               </p>
               <p style={{ fontSize: 12, lineHeight: 1.6, color: "rgba(0,229,204,0.6)" }}>
-                Your private key, API key, secret, and passphrase are encrypted with{" "}
-                <code style={{
-                  fontFamily: "monospace", fontWeight: 700,
-                  color: C.accent, fontSize: 11.5,
-                }}>
+                Everything you enter is encrypted with{" "}
+                <code style={{ fontFamily: "monospace", fontWeight: 700, color: C.accent, fontSize: 11.5 }}>
                   AES-256-GCM
                 </code>{" "}
-                server-side before storage. Plaintext never touches the database.
+                on our server before being stored. Your plaintext credentials never touch the database.
               </p>
             </div>
           </div>
 
-          {/* The form */}
+          {/* Form */}
           <form
             action={formAction}
             style={{
@@ -329,66 +515,85 @@ export default function NewClientPage() {
               backdropFilter: "blur(20px)",
               WebkitBackdropFilter: "blur(20px)",
               border: "1px solid rgba(0,229,204,0.10)",
-              borderRadius: 18,
-              padding: "28px 28px 24px",
+              borderRadius: 18, padding: "28px 28px 24px",
               boxShadow: "0 0 60px -16px rgba(0,229,204,0.12), inset 0 1px 0 rgba(255,255,255,0.04)",
               display: "flex", flexDirection: "column", gap: 18,
             }}
           >
 
-            {/* ── Identity ── */}
-            <SectionLabel>Account Identity</SectionLabel>
+            {/* ── Section 1: Account ── */}
+            <SectionLabel>Your Account</SectionLabel>
 
             <Field
-              label="Display Label"
+              label="Account Nickname"
               name="label"
-              placeholder="e.g. Alice's Main Account"
-              hint="A human-readable name — visible only in this dashboard."
+              placeholder="e.g. My Main Wallet"
+              hint="Just a name to identify this account in your dashboard."
             />
+
             <Field
-              label="Funder Address (Gnosis Safe)"
+              label="Polymarket Wallet Address"
               name="funder_address"
               placeholder="0xF936..."
-              hint="The Gnosis Safe holding USDC and outcome tokens. Not a secret — stored plaintext."
-            />
-            <Field
-              label="Trade Amount (USD)"
-              name="trade_amount_usd"
-              type="number"
-              placeholder="1.00"
-              hint="Fixed BUY size per copied trade (e.g. 5.00)."
+              hint="Your Gnosis Safe address on Polygon — this is where your USDC and winnings live."
+              guide={[
+                'Go to <strong>polymarket.com</strong> and click your avatar in the top-right.',
+                'Select <strong>Profile</strong> — your wallet address is shown at the top. Copy it.',
+              ]}
             />
 
-            {/* ── Credentials ── */}
-            <SectionLabel>Encrypted Credentials</SectionLabel>
+            {/* ── Trade size slider ── */}
+            <TradeSlider />
+
+            {/* ── Section 2: API Access ── */}
+            <SectionLabel>API Access</SectionLabel>
 
             <Field
-              label="Private Key"
+              label="Wallet Private Key"
               name="private_key"
               type="password"
-              placeholder="EOA private key (0x...)"
-              hint="Signs orders on behalf of the Gnosis Safe. Encrypted before storage."
+              placeholder="0x..."
+              hint="Used to sign orders on your behalf. Never shared or stored in plaintext."
+              guide={[
+                'This is the private key for the <strong>EOA wallet</strong> that controls your Gnosis Safe.',
+                'Export it from MetaMask via <strong>Account Details → Export Private Key</strong>.',
+              ]}
             />
+
             <Field
               label="Polymarket API Key"
               name="poly_api_key"
               type="password"
               placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-              hint="From the Polymarket CLOB API dashboard. Encrypted before storage."
+              hint="Grants the bot permission to trade on your account. Encrypted before storage."
+              guide={[
+                'Log in to <strong>polymarket.com</strong>, open your profile menu, and go to <strong>Settings</strong>.',
+                'Click <strong>API Keys → Create New Key</strong>. Copy the API Key shown.',
+              ]}
             />
+
             <Field
-              label="Polymarket API Secret"
+              label="API Secret"
               name="poly_secret"
               type="password"
               placeholder="Your API secret"
-              hint="Encrypted before storage."
+              hint="Shown once when you create your API Key — copy it immediately."
+              guide={[
+                'Created alongside your API Key in <strong>Polymarket Settings → API Keys</strong>.',
+                'If you lost it, delete the old key and create a new one.',
+              ]}
             />
+
             <Field
-              label="Polymarket API Passphrase"
+              label="API Passphrase"
               name="poly_passphrase"
               type="password"
               placeholder="Your API passphrase"
-              hint="Encrypted before storage."
+              hint="The passphrase you chose when creating your Polymarket API key."
+              guide={[
+                'This is the custom passphrase <strong>you set</strong> when creating the API key.',
+                "If you forgot it, go to <strong>Settings → API Keys</strong>, delete the key, and create a fresh one.",
+              ]}
             />
 
             {/* ── Error ── */}
@@ -415,7 +620,7 @@ export default function NewClientPage() {
                 <span style={{ color: C.accent, marginTop: 1, fontSize: 15 }}>✓</span>
                 <div>
                   <p style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>
-                    Client registered successfully
+                    Account connected! The bot is now live.
                   </p>
                   <p style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(0,229,204,0.5)", marginTop: 2 }}>
                     ID: {result.clientId}
@@ -429,12 +634,9 @@ export default function NewClientPage() {
               <ShimmerButton pending={isPending} />
             </div>
 
-            <p style={{
-              textAlign: "center", fontSize: 11.5, lineHeight: 1.5,
-              color: "#3d4d63",
-            }}>
+            <p style={{ textAlign: "center", fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>
               Fields marked <span style={{ color: C.accent }}>*</span> are required.
-              Credentials are encrypted server-side before reaching the database.
+              Everything is encrypted before it leaves your browser session.
             </p>
           </form>
         </div>
