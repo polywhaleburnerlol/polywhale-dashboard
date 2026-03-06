@@ -9,6 +9,7 @@
 
 import { useActionState, useState } from "react";
 import { registerClient, type ActionResult } from "@/app/actions/client";
+import { WhaleSonarBackground } from "@/components/WhaleSonarBackground";
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
 const C = {
@@ -405,18 +406,7 @@ export default function NewClientPage() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
         .pw-form-page { font-family: 'DM Sans', sans-serif; }
-        .pw-page-glow-tl {
-          position: fixed; top: -200px; left: -200px;
-          width: 600px; height: 600px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(124,92,252,0.07), transparent 65%);
-          pointer-events: none; z-index: 0;
-        }
-        .pw-page-glow-br {
-          position: fixed; bottom: -200px; right: -100px;
-          width: 500px; height: 500px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(0,229,204,0.06), transparent 65%);
-          pointer-events: none; z-index: 0;
-        }
+
         .pw-form-page input::placeholder { color: #3d4d63; }
       `}</style>
 
@@ -424,8 +414,8 @@ export default function NewClientPage() {
         minHeight: "100vh", background: C.bg,
         padding: "48px 24px 80px", position: "relative",
       }}>
-        <div className="pw-page-glow-tl" aria-hidden />
-        <div className="pw-page-glow-br" aria-hidden />
+        {/* ── Ambient sonar background — fixed, z-index: 0, pointer-events: none ── */}
+        <WhaleSonarBackground />
 
         {/* ── Page header ── */}
         <div style={{
