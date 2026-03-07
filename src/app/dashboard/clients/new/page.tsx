@@ -3,10 +3,12 @@
 /**
  * app/dashboard/clients/new/page.tsx
  *
- * The ambient background (grid + radial glows) now lives in the parent
- * dashboard layout, so this page is a clean content-only component.
- * All backend logic, name= attributes, and Server Action wiring are
- * byte-for-byte identical to the previous version.
+ * Pure content page — no background component, no positioning wrapper.
+ * The PolygonMeshBackground lives in the parent dashboard layout and
+ * persists across all /dashboard/* navigations.
+ *
+ * Nothing changed backend-side: all name= attributes, Server Action
+ * imports, and encryption flow are identical to the working version.
  */
 
 import { useActionState, useState } from "react";
@@ -20,7 +22,6 @@ const C = {
   accentAlt:     "#7c5cfc",
   textPrimary:   "#e2e8f0",
   textSecondary: "#8492a6",
-  border:        "rgba(0,229,204,0.12)",
 };
 
 /* ════════════════════════════════════════════════════════════════
@@ -33,7 +34,7 @@ function HowToGuide({ steps }: { steps: string[] }) {
     <div style={{ marginTop: 2 }}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => setOpen(o => !o)}
         style={{
           display: "inline-flex", alignItems: "center", gap: 5,
           background: "none", border: "none", cursor: "pointer", padding: 0,
@@ -49,7 +50,6 @@ function HowToGuide({ steps }: { steps: string[] }) {
           style={{
             transform: open ? "rotate(90deg)" : "rotate(0deg)",
             transition: "transform 0.22s cubic-bezier(0.16,1,0.3,1)",
-            color: open ? C.accent : "#4a6080",
           }}
         >
           <path d="M9 18l6-6-6-6" />
@@ -59,7 +59,7 @@ function HowToGuide({ steps }: { steps: string[] }) {
 
       <div style={{
         overflow: "hidden",
-        maxHeight: open ? 200 : 0,
+        maxHeight: open ? 220 : 0,
         opacity: open ? 1 : 0,
         transition: "max-height 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.22s ease",
       }}>
@@ -103,7 +103,17 @@ function HowToGuide({ steps }: { steps: string[] }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   TRADE SLIDER — hybrid range + uncapped editable input + pills
+   TRADE SLIDER — hybrid uncapped range + editable number + pills
+
+   State model
+   ───────────
+   `amount`    — authoritative numeric value, can exceed SLIDER_MAX
+   `inputStr`  — raw string the user is currently typing (allows
+                 intermediate states like "" or "10.")
+
+   The range thumb visually clamps at SLIDER_MAX but `amount` tracks
+   any positive value the user types.  The hidden input always submits
+   the parsed `amount`, never the raw string.
    ════════════════════════════════════════════════════════════════ */
 const QUICK_AMOUNTS = [1, 5, 10, 25];
 const SLIDER_MAX    = 100;
@@ -114,31 +124,34 @@ function TradeSlider() {
   const [focused,  setFocused]  = useState(false);
 
   const sliderVisualVal = Math.min(amount, SLIDER_MAX);
-  const pct = ((sliderVisualVal - 1) / (SLIDER_MAX - 1)) * 100;
-  const isOverCap = amount > SLIDER_MAX;
+  const pct             = ((sliderVisualVal - 1) / (SLIDER_MAX - 1)) * 100;
+  const isOverCap       = amount > SLIDER_MAX;
 
   function pickAmount(v: number) {
     setAmount(v);
     setInputStr(String(v));
   }
+
   function onSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
     const v = Number(e.target.value);
     setAmount(v);
     setInputStr(String(v));
   }
+
   function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
     const raw = e.target.value;
     setInputStr(raw);
     const parsed = parseFloat(raw);
     if (!isNaN(parsed) && parsed > 0) setAmount(parsed);
   }
+
   function onInputBlur() {
     setFocused(false);
     const parsed = parseFloat(inputStr);
     if (isNaN(parsed) || parsed <= 0) {
-      setInputStr(String(amount));
+      setInputStr(String(amount));        // revert to last valid
     } else {
-      setInputStr(String(parsed));
+      setInputStr(String(parsed));        // normalise e.g. "05" → "5"
       setAmount(parsed);
     }
   }
@@ -146,7 +159,7 @@ function TradeSlider() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
 
-      {/* Label + editable value badge */}
+      {/* Label row + editable $ badge */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <label
           htmlFor="trade-amount-input"
@@ -160,8 +173,9 @@ function TradeSlider() {
           <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>
         </label>
 
+        {/* Editable amount badge */}
         <div style={{
-          position: "relative", display: "flex", alignItems: "center",
+          display: "flex", alignItems: "center",
           borderRadius: 9,
           background: focused ? "rgba(0,229,204,0.07)" : "rgba(0,229,204,0.05)",
           border: `1px solid ${focused ? "rgba(0,229,204,0.40)" : "rgba(0,229,204,0.20)"}`,
@@ -193,7 +207,7 @@ function TradeSlider() {
         </div>
       </div>
 
-      {/* Slider + pill CSS */}
+      {/* Slider + pill styles injected inline so the gradient reacts to pct */}
       <style>{`
         #trade-amount-input::-webkit-outer-spin-button,
         #trade-amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
@@ -232,11 +246,13 @@ function TradeSlider() {
           flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
           font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
           border: 1px solid rgba(0,229,204,0.14);
-          background: rgba(0,229,204,0.04);
-          color: #8492a6;
+          background: rgba(0,229,204,0.04); color: #8492a6;
           transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
         }
-        .pw-pill:hover  { border-color: rgba(0,229,204,0.28); color: #00e5cc; background: rgba(0,229,204,0.08); }
+        .pw-pill:hover {
+          border-color: rgba(0,229,204,0.28); color: #00e5cc;
+          background: rgba(0,229,204,0.08);
+        }
         .pw-pill-active {
           border-color: rgba(0,229,204,0.40) !important;
           background: rgba(0,229,204,0.12) !important;
@@ -245,9 +261,10 @@ function TradeSlider() {
         }
       `}</style>
 
-      {/* Range slider */}
+      {/* Range slider — visual max 100, thumb clamps at cap for over-cap values */}
       <input
-        type="range" className="pw-slider"
+        type="range"
+        className="pw-slider"
         min={1} max={SLIDER_MAX} step={1}
         value={sliderVisualVal}
         onChange={onSliderChange}
@@ -272,7 +289,7 @@ function TradeSlider() {
 
       {/* Quick-select pills */}
       <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
-        {QUICK_AMOUNTS.map((v) => (
+        {QUICK_AMOUNTS.map(v => (
           <button
             key={v} type="button"
             onClick={() => pickAmount(v)}
@@ -290,7 +307,7 @@ function TradeSlider() {
           : "Type any amount or drag the slider. You can change this anytime."}
       </p>
 
-      {/* Hidden input — single source of truth for the Server Action */}
+      {/* Hidden input — the only value the Server Action reads */}
       <input type="hidden" name="trade_amount_usd" value={amount} />
     </div>
   );
@@ -325,6 +342,7 @@ function Field({
       </label>
 
       <div style={{ position: "relative" }}>
+        {/* Cyan glow ring — only rendered on focus to avoid always-on DOM nodes */}
         {focused && (
           <div style={{
             position: "absolute", inset: -1, borderRadius: 11,
@@ -347,6 +365,7 @@ function Field({
             position: "relative", zIndex: 1,
             width: "100%", display: "block",
             padding: "11px 14px", borderRadius: 10,
+            /* Dark background — never white */
             background: focused ? "rgba(0,229,204,0.04)" : "rgba(6,11,24,0.7)",
             border: `1px solid ${focused ? "rgba(0,229,204,0.35)" : "rgba(0,229,204,0.10)"}`,
             color: C.textPrimary, fontSize: 13.5,
@@ -357,7 +376,7 @@ function Field({
         />
       </div>
 
-      {hint && <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>{hint}</p>}
+      {hint  && <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>{hint}</p>}
       {guide && <HowToGuide steps={guide} />}
     </div>
   );
@@ -383,7 +402,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   SHIMMER BUTTON
+   SHIMMER SUBMIT BUTTON
    ════════════════════════════════════════════════════════════════ */
 function ShimmerButton({ pending }: { pending: boolean }) {
   const [hovered, setHovered] = useState(false);
@@ -395,11 +414,17 @@ function ShimmerButton({ pending }: { pending: boolean }) {
           100% { background-position:  200% 0; }
         }
         .pw-shimmer-btn {
-          background: linear-gradient(110deg, #00e5cc 0%, #00e5cc 40%, #7dfff0 50%, #00e5cc 60%, #00e5cc 100%);
+          background: linear-gradient(
+            110deg,
+            #00e5cc 0%, #00e5cc 40%, #7dfff0 50%, #00e5cc 60%, #00e5cc 100%
+          );
           background-size: 200% 100%;
           animation: pw-shimmer 3s ease-in-out infinite;
         }
-        @keyframes pw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+        @keyframes pw-spin {
+          from { transform: rotate(0deg); }
+          to   { transform: rotate(360deg); }
+        }
       `}</style>
       <button
         type="submit"
@@ -424,7 +449,8 @@ function ShimmerButton({ pending }: { pending: boolean }) {
         {pending ? (
           <>
             <svg style={{ animation: "pw-spin 0.8s linear infinite" }}
-              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
+              width="16" height="16" viewBox="0 0 24 24"
+              fill="none" stroke="currentColor" strokeWidth={2.5}>
               <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round" />
             </svg>
             Encrypting & Saving…
@@ -444,9 +470,11 @@ function ShimmerButton({ pending }: { pending: boolean }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   PAGE
-   No background component — the dashboard layout provides it.
-   This component is pure content: header + glassmorphism form card.
+   PAGE — default export
+
+   Renders directly inside the dashboard layout's <main> element.
+   No background component, no position wrapper, no overflow:hidden.
+   Just padding + the glassmorphism form card.
    ════════════════════════════════════════════════════════════════ */
 const initialState: ActionResult | null = null;
 
@@ -466,23 +494,18 @@ export default function NewClientPage() {
         .pw-form-page input::placeholder { color: #3d4d63; }
       `}</style>
 
-      {/*
-        No background, no overflow:hidden, no position:relative wrapper.
-        Sits directly inside <main> from dashboard layout.
-        padding gives breathing room around the form card.
-      */}
       <div className="pw-form-page" style={{ padding: "48px 24px 80px" }}>
 
         {/* ── Page header ── */}
-        <div style={{
-          maxWidth: 520, margin: "0 auto 32px",
-          textAlign: "center",
-        }}>
+        <div style={{ maxWidth: 520, margin: "0 auto 32px", textAlign: "center" }}>
+
+          {/* "New Account Setup" pill badge */}
           <div style={{
             display: "inline-flex", alignItems: "center", gap: 8,
             padding: "6px 16px", borderRadius: 100,
             background: "rgba(0,229,204,0.07)",
-            border: "1px solid rgba(0,229,204,0.18)", marginBottom: 20,
+            border: "1px solid rgba(0,229,204,0.18)",
+            marginBottom: 20,
           }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, flexShrink: 0 }} />
             <span style={{
@@ -511,12 +534,13 @@ export default function NewClientPage() {
             </span>
             {" "}Today
           </h1>
+
           <p style={{ fontSize: 14, lineHeight: 1.7, color: C.textSecondary, maxWidth: 400, margin: "0 auto" }}>
             Connect your Polymarket wallet and the bot will automatically mirror top whale trades into your account.
           </p>
         </div>
 
-        {/* ── Form card ── */}
+        {/* ── Form card area ── */}
         <div style={{ maxWidth: 520, margin: "0 auto" }}>
 
           {/* Security notice */}
@@ -531,7 +555,8 @@ export default function NewClientPage() {
               width: 34, height: 34, borderRadius: 9, flexShrink: 0,
               background: "linear-gradient(135deg, rgba(0,229,204,0.2), rgba(124,92,252,0.15))",
               border: "1px solid rgba(0,229,204,0.2)",
-              display: "flex", alignItems: "center", justifyContent: "center", color: C.accent,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              color: C.accent,
             }}>
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
@@ -553,20 +578,20 @@ export default function NewClientPage() {
             </div>
           </div>
 
-          {/* Glassmorphism form card */}
+          {/* ── Glassmorphism form card ── */}
           <form
             action={formAction}
             style={{
-              background: C.bgCard,
+              background: C.bgCard,           /* rgba(12,20,40,0.65) */
               backdropFilter: "blur(22px)",
               WebkitBackdropFilter: "blur(22px)",
               border: "1px solid rgba(0,229,204,0.10)",
-              borderRadius: 18, padding: "28px 28px 24px",
+              borderRadius: 18,
+              padding: "28px 28px 24px",
               boxShadow: "0 0 60px -16px rgba(0,229,204,0.12), inset 0 1px 0 rgba(255,255,255,0.04)",
               display: "flex", flexDirection: "column", gap: 18,
             }}
           >
-
             <SectionLabel>Your Account</SectionLabel>
 
             <Field
@@ -639,7 +664,7 @@ export default function NewClientPage() {
               ]}
             />
 
-            {/* Error */}
+            {/* Error banner */}
             {result && !result.success && (
               <div style={{
                 display: "flex", alignItems: "flex-start", gap: 10,
@@ -652,7 +677,7 @@ export default function NewClientPage() {
               </div>
             )}
 
-            {/* Success */}
+            {/* Success banner */}
             {result?.success && (
               <div style={{
                 display: "flex", alignItems: "flex-start", gap: 10,
