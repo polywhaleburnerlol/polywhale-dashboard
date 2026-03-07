@@ -2,7 +2,24 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ActiveNavLink } from "@/components/ActiveNavLink";
 
-/* ── Design system tokens (matches polywhale-main exactly) ─────────────── */
+/**
+ * src/app/dashboard/layout.tsx
+ *
+ * Persistent shell for every /dashboard/* route.
+ * Contains: full-page ambient background, fixed sidebar, sticky top bar,
+ * and a scrollable main content slot.
+ *
+ * Background architecture
+ * ───────────────────────
+ * The outer wrapper is `position: relative; overflow: hidden` so the
+ * ambient layers (grid + radial glows) are clipped to the shell and
+ * never bleed outside it.  Sidebar (z-index:10) and main column
+ * (z-index:1) sit above z-index:0 background layers.
+ * This replaces the old per-page <PolygonMeshBackground /> / <AmbientBackground />
+ * approach — background now lives here once and is shared by every page.
+ */
+
+/* ── Design system tokens ───────────────────────────────────────────────── */
 const C = {
   bg:            "#060b18",
   bgCard:        "rgba(12,20,40,0.65)",
@@ -86,32 +103,27 @@ const NAV_ITEMS = [
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      {/*
-        Inline style block — injects the design system's keyframes + hover
-        classes that cannot be expressed as static Tailwind classes.
-        All color values are hardcoded hex/rgba to stay Tailwind v4 safe.
-      */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 
-        .pw-layout { background: #060b18; font-family: 'DM Sans', sans-serif; }
+        .pw-layout { font-family: 'DM Sans', sans-serif; }
         .pw-font-display { font-family: 'Syne', sans-serif; }
 
-        /* Drifting cyan grid backdrop */
+        /* ── Ambient drifting grid ── */
         @keyframes pw-grid-drift {
           0%   { transform: translate(0, 0); }
-          100% { transform: translate(40px, 40px); }
+          100% { transform: translate(48px, 48px); }
         }
         .pw-grid-bg {
           position: absolute; inset: 0; pointer-events: none; z-index: 0;
           background-image:
-            linear-gradient(rgba(0,229,204,0.025) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,229,204,0.025) 1px, transparent 1px);
+            linear-gradient(rgba(0,229,204,0.022) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,229,204,0.022) 1px, transparent 1px);
           background-size: 60px 60px;
-          animation: pw-grid-drift 24s linear infinite;
+          animation: pw-grid-drift 26s linear infinite;
         }
 
-        /* Sidebar glass panel */
+        /* ── Sidebar glass panel ── */
         .pw-sidebar {
           position: relative; z-index: 10;
           background: rgba(10,16,32,0.85);
@@ -119,15 +131,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           -webkit-backdrop-filter: blur(20px);
           border-right: 1px solid rgba(0,229,204,0.10);
         }
-
-        /* Scrollbar */
         .pw-sidebar ::-webkit-scrollbar { width: 4px; }
         .pw-sidebar ::-webkit-scrollbar-track { background: transparent; }
         .pw-sidebar ::-webkit-scrollbar-thumb {
           background: rgba(0,229,204,0.15); border-radius: 4px;
         }
 
-        /* Top bar */
+        /* ── Top bar ── */
         .pw-topbar {
           background: rgba(6,11,24,0.90);
           backdrop-filter: blur(16px);
@@ -135,7 +145,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-bottom: 1px solid rgba(0,229,204,0.08);
         }
 
-        /* Nav link base */
+        /* ── Nav link ── */
         .pw-nav-link {
           display: flex; align-items: center; gap: 11px;
           padding: 10px 12px; border-radius: 10px;
@@ -156,7 +166,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-color: rgba(0,229,204,0.20);
           box-shadow: 0 0 20px -6px rgba(0,229,204,0.25);
         }
-        /* Active left accent bar */
         .pw-nav-link[data-active="true"]::before {
           content: '';
           position: absolute; left: 0; top: 20%; bottom: 20%;
@@ -164,7 +173,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           background: linear-gradient(180deg, #00e5cc, #7c5cfc);
         }
 
-        /* Engine status pulse */
+        /* ── Engine status pulse ── */
         @keyframes pw-ping {
           0%   { transform: scale(1); opacity: 0.6; }
           70%  { transform: scale(2.2); opacity: 0; }
@@ -172,41 +181,78 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         .pw-ping { animation: pw-ping 2s cubic-bezier(0,0,0.2,1) infinite; }
 
-        /* Chain badge */
+        /* ── Chain badge ── */
         .pw-badge {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 5px 12px; border-radius: 100px;
           background: rgba(124,92,252,0.08);
           border: 1px solid rgba(124,92,252,0.18);
           font-size: 11.5px; font-weight: 600;
-          color: #a78bfa;
-          letter-spacing: 0.01em;
+          color: #a78bfa; letter-spacing: 0.01em;
         }
 
-        /* Separator */
+        /* ── Separator ── */
         .pw-sep {
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(0,229,204,0.12), transparent);
           margin: 8px 12px;
         }
 
-        /* Home back link */
+        /* ── Back link ── */
         .pw-back {
           display: flex; align-items: center; gap: 6px;
           font-size: 12px; font-weight: 500; color: #8492a6;
-          text-decoration: none;
-          transition: color 0.18s;
+          text-decoration: none; transition: color 0.18s;
         }
         .pw-back:hover { color: #00e5cc; }
       `}</style>
 
-      <div className="pw-layout flex min-h-screen" style={{ background: C.bg }}>
+      {/*
+        Outer shell: position:relative + overflow:hidden
+        — constrains all position:absolute children (grid, glows)
+        to this viewport so they never paint outside the dashboard.
+        min-h-screen ensures it fills the full viewport height.
+      */}
+      <div
+        className="pw-layout flex min-h-screen"
+        style={{ background: C.bg, position: "relative", overflow: "hidden" }}
+      >
 
-        {/* ── Ambient grid ── */}
+        {/* ══ LAYER 0: Ambient background (z-index:0) ══════════════════════ */}
+
+        {/* Drifting grid */}
         <div className="pw-grid-bg" aria-hidden />
 
-        {/* ══════════ SIDEBAR ══════════ */}
-        <aside className="pw-sidebar flex w-60 shrink-0 flex-col" style={{ width: 236 }}>
+        {/* Cyan top-center radial glow */}
+        <div aria-hidden style={{
+          position: "absolute", top: -200, left: "50%",
+          transform: "translateX(-50%)",
+          width: 780, height: 780, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(0,229,204,0.085) 0%, transparent 65%)",
+          pointerEvents: "none", zIndex: 0,
+        }} />
+
+        {/* Purple top-left glow */}
+        <div aria-hidden style={{
+          position: "absolute", top: -280, left: -220,
+          width: 680, height: 680, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(124,92,252,0.075) 0%, transparent 65%)",
+          pointerEvents: "none", zIndex: 0,
+        }} />
+
+        {/* Purple bottom-right glow */}
+        <div aria-hidden style={{
+          position: "absolute", bottom: -240, right: -180,
+          width: 640, height: 640, borderRadius: "50%",
+          background: "radial-gradient(circle, rgba(124,92,252,0.065) 0%, transparent 65%)",
+          pointerEvents: "none", zIndex: 0,
+        }} />
+
+        {/* ══ LAYER 10: Sidebar (z-index:10) ═══════════════════════════════ */}
+        <aside
+          className="pw-sidebar"
+          style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
+        >
 
           {/* Logotype */}
           <div style={{
@@ -214,7 +260,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             padding: "20px 20px 18px",
             borderBottom: "1px solid rgba(0,229,204,0.08)",
           }}>
-            {/* Gradient icon mark */}
             <div style={{
               width: 34, height: 34, borderRadius: 10, flexShrink: 0,
               background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
@@ -225,8 +270,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               </svg>
             </div>
             <span className="pw-font-display" style={{
-              fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em",
-              color: "#fff",
+              fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em", color: "#fff",
             }}>
               Poly<span style={{ color: C.accent }}>Whale</span>
             </span>
@@ -271,18 +315,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
               {NAV_ITEMS.map((item) => (
                 <li key={item.href}>
-                  <ActiveNavLink
-                    href={item.href}
-                    exact={item.exact}
-                    className="pw-nav-link"
-                  >
+                  <ActiveNavLink href={item.href} exact={item.exact} className="pw-nav-link">
                     {item.icon}
                     {item.label}
                   </ActiveNavLink>
                 </li>
               ))}
             </ul>
-
             <div className="pw-sep" style={{ marginTop: 16 }} />
           </nav>
 
@@ -305,10 +344,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        {/* ══════════ MAIN COLUMN ══════════ */}
-        <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", position: "relative", zIndex: 1 }}>
+        {/* ══ LAYER 1: Main column (z-index:1) ══════════════════════════════
+            display:flex flex-col so the topbar stays sticky and only
+            <main> scrolls.  overflow:hidden on this column prevents
+            double-scrollbars — only <main> is allowed to scroll.
+        */}
+        <div style={{
+          display: "flex", flexDirection: "column",
+          flex: 1, minWidth: 0,
+          position: "relative", zIndex: 1,
+          overflow: "hidden",
+        }}>
 
-          {/* Top bar */}
+          {/* Sticky top bar */}
           <header className="pw-topbar" style={{
             height: 60, flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -317,8 +365,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ color: "#3d4d63", fontSize: 14 }}>/</span>
               <span className="pw-font-display" style={{
-                fontSize: 13.5, fontWeight: 700, color: C.textSecondary,
-                letterSpacing: "0.01em",
+                fontSize: 13.5, fontWeight: 700,
+                color: C.textSecondary, letterSpacing: "0.01em",
               }}>
                 Dashboard
               </span>
@@ -333,7 +381,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 Polygon Mainnet
               </span>
 
-              {/* Notification bell */}
               <button
                 aria-label="Notifications"
                 style={{
@@ -354,8 +401,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          {/* Scrollable page slot */}
-          <main style={{ flex: 1, overflowY: "auto" }}>{children}</main>
+          {/* ── Scrollable page slot — children render here ── */}
+          <main style={{ flex: 1, overflowY: "auto" }}>
+            {children}
+          </main>
+
         </div>
       </div>
     </>
