@@ -285,9 +285,11 @@ function AmbientBackground() {
 /* ══════════════════════════════════════════════════════════════
    PAGE
    ══════════════════════════════════════════════════════════════ */
+import { useActionState, useState, useEffect, Suspense } from "react";
+
 const initialState: AuthResult | null = null;
 
-export default function LoginPage() {
+function LoginContent() {
   const searchParams = useSearchParams();
   const nextPath     = searchParams.get("next") ?? "/dashboard";
 
@@ -460,5 +462,13 @@ export default function LoginPage() {
         </div>
       </div>
     </>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#060b18" }}>Loading...</div>}>
+      <LoginContent />
+    </Suspense>
   );
 }
