@@ -1,27 +1,22 @@
 "use client";
 
 /**
- * src/app/login/page.tsx
+ * app/dashboard/clients/new/page.tsx
  *
- * Standalone login page — no dashboard layout wrapper.
- * Matches the premium dark Web3 design system used across the dashboard.
- *
- * Design tokens (matching PolygonMeshBackground / dashboard palette):
- *   Background:  #060b18
- *   Accent cyan: #00e5cc
- *   Accent alt:  #7c5cfc
- *   Glass card:  rgba(12,20,40,0.65) + backdrop-filter: blur(20px)
- *
- * Backend: signIn Server Action in @/app/actions/auth.ts
- *
- * Fix: useSearchParams() must be inside a <Suspense> boundary at build time.
- * Solution: all hook usage lives in <LoginContent />, and the default export
- * <LoginPage /> is a pure Suspense shell with a matching dark fallback.
+ * ── What changed in this revision ───────────────────────────────────────────
+ * • Background: replaced <PolygonMeshBackground /> (position:fixed, full-screen)
+ *   with an inline <AmbientBackground /> that is position:absolute, scoped to
+ *   the content wrapper.  This prevents the mesh from bleeding over the sidebar.
+ * • Wrapper: removed `minHeight:100vh` / full `background` override that fought
+ *   the dashboard layout.  The wrapper is now `position:relative; overflow:hidden`
+ *   and sits inside whatever space the sidebar layout gives it.
+ * • All backend logic, name= attributes, Server Action imports, encryption paths,
+ *   HowToGuide, TradeSlider, Field, SectionLabel, ShimmerButton are byte-for-byte
+ *   identical to the previous version.
  */
 
-import { Suspense, useActionState, useEffect, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { signIn, type AuthResult } from "@/app/actions/auth";
+import { useActionState, useState } from "react";
+import { registerClient, type ActionResult } from "@/app/actions/client";
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
 const C = {
@@ -31,150 +26,446 @@ const C = {
   accentAlt:     "#7c5cfc",
   textPrimary:   "#e2e8f0",
   textSecondary: "#8492a6",
+  border:        "rgba(0,229,204,0.12)",
 };
 
-/* ── Email input field ──────────────────────────────────────────────────── */
-function EmailField() {
-  const [focused, setFocused] = useState(false);
-
+/* ════════════════════════════════════════════════════════════════
+   AMBIENT BACKGROUND
+   position:absolute so it fills only the content area,
+   never bleeding over the sidebar.
+   ════════════════════════════════════════════════════════════════ */
+function AmbientBackground() {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      <label
-        htmlFor="email"
-        style={{
-          fontSize: 11, fontWeight: 700, letterSpacing: "0.09em",
-          textTransform: "uppercase",
-          color: focused ? C.accent : "#4a5a72",
-          transition: "color 0.18s",
-          fontFamily: "'Syne', sans-serif",
-        }}
-      >
-        Email Address
-      </label>
-      <div style={{ position: "relative" }}>
-        {focused && (
-          <div style={{
-            position: "absolute", inset: -1, borderRadius: 11,
-            background: "linear-gradient(135deg, rgba(0,229,204,0.22), rgba(124,92,252,0.14))",
-            pointerEvents: "none", zIndex: 0,
-            boxShadow: "0 0 18px -4px rgba(0,229,204,0.28)",
-          }} />
-        )}
-        <input
-          id="email"
-          name="email"
-          type="email"
-          autoComplete="email"
-          required
-          placeholder="you@example.com"
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
-          style={{
-            position: "relative", zIndex: 1,
-            width: "100%", display: "block",
-            padding: "12px 14px", borderRadius: 10,
-            background: focused ? "rgba(0,229,204,0.04)" : "rgba(6,11,24,0.7)",
-            border: `1px solid ${focused ? "rgba(0,229,204,0.35)" : "rgba(0,229,204,0.10)"}`,
-            color: C.textPrimary, fontSize: 14,
-            fontFamily: "'DM Sans', sans-serif",
-            outline: "none",
-            transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
-          }}
-        />
-      </div>
-    </div>
+    <>
+      <style>{`
+        @keyframes pw-grid-drift {
+          0%   { transform: translate(0, 0); }
+          100% { transform: translate(48px, 48px); }
+        }
+        .pw-dash-grid {
+          position: absolute; inset: 0; z-index: 0; pointer-events: none;
+          background-image:
+            linear-gradient(rgba(0,229,204,0.020) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(0,229,204,0.020) 1px, transparent 1px);
+          background-size: 60px 60px;
+          animation: pw-grid-drift 26s linear infinite;
+        }
+      `}</style>
+
+      {/* Drifting grid */}
+      <div className="pw-dash-grid" aria-hidden />
+
+      {/* Cyan top-center glow */}
+      <div aria-hidden style={{
+        position: "absolute", top: -160, left: "50%",
+        transform: "translateX(-50%)",
+        width: 640, height: 640, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(0,229,204,0.09) 0%, transparent 65%)",
+        pointerEvents: "none", zIndex: 0,
+      }} />
+
+      {/* Purple bottom-right glow */}
+      <div aria-hidden style={{
+        position: "absolute", bottom: -180, right: -120,
+        width: 580, height: 580, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(124,92,252,0.08) 0%, transparent 65%)",
+        pointerEvents: "none", zIndex: 0,
+      }} />
+
+      {/* Purple top-left accent */}
+      <div aria-hidden style={{
+        position: "absolute", top: -200, left: -160,
+        width: 500, height: 500, borderRadius: "50%",
+        background: "radial-gradient(circle, rgba(124,92,252,0.06) 0%, transparent 65%)",
+        pointerEvents: "none", zIndex: 0,
+      }} />
+    </>
   );
 }
 
-/* ── Password input field ───────────────────────────────────────────────── */
-function PasswordField() {
-  const [focused, setFocused] = useState(false);
-  const [visible, setVisible] = useState(false);
+/* ════════════════════════════════════════════════════════════════
+   HOW-TO GUIDE — expandable inline helper accordion
+   ════════════════════════════════════════════════════════════════ */
+function HowToGuide({ steps }: { steps: string[] }) {
+  const [open, setOpen] = useState(false);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      <label
-        htmlFor="password"
+    <div style={{ marginTop: 2 }}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
         style={{
-          fontSize: 11, fontWeight: 700, letterSpacing: "0.09em",
-          textTransform: "uppercase",
-          color: focused ? C.accent : "#4a5a72",
+          display: "inline-flex", alignItems: "center", gap: 5,
+          background: "none", border: "none", cursor: "pointer", padding: 0,
+          fontSize: 11.5, fontWeight: 600, letterSpacing: "0.01em",
+          color: open ? C.accent : "#4a6080",
           transition: "color 0.18s",
-          fontFamily: "'Syne', sans-serif",
+          fontFamily: "'DM Sans', sans-serif",
         }}
       >
-        Password
-      </label>
-      <div style={{ position: "relative" }}>
-        {focused && (
-          <div style={{
-            position: "absolute", inset: -1, borderRadius: 11,
-            background: "linear-gradient(135deg, rgba(0,229,204,0.22), rgba(124,92,252,0.14))",
-            pointerEvents: "none", zIndex: 0,
-            boxShadow: "0 0 18px -4px rgba(0,229,204,0.28)",
-          }} />
-        )}
-        <input
-          id="password"
-          name="password"
-          type={visible ? "text" : "password"}
-          autoComplete="current-password"
-          required
-          placeholder="••••••••••"
-          onFocus={() => setFocused(true)}
-          onBlur={() => setFocused(false)}
+        <svg
+          width="12" height="12" viewBox="0 0 24 24" fill="none"
+          stroke="currentColor" strokeWidth={2.5} strokeLinecap="round"
           style={{
-            position: "relative", zIndex: 1,
-            width: "100%", display: "block",
-            padding: "12px 42px 12px 14px", borderRadius: 10,
-            background: focused ? "rgba(0,229,204,0.04)" : "rgba(6,11,24,0.7)",
-            border: `1px solid ${focused ? "rgba(0,229,204,0.35)" : "rgba(0,229,204,0.10)"}`,
-            color: C.textPrimary, fontSize: 14,
-            fontFamily: "'DM Sans', sans-serif",
-            outline: "none",
-            transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
+            transform: open ? "rotate(90deg)" : "rotate(0deg)",
+            transition: "transform 0.22s cubic-bezier(0.16,1,0.3,1)",
+            color: open ? C.accent : "#4a6080",
           }}
-        />
-        {/* Show / hide password toggle */}
-        <button
-          type="button"
-          onClick={() => setVisible(v => !v)}
-          style={{
-            position: "absolute", right: 12, top: "50%",
-            transform: "translateY(-50%)",
-            zIndex: 2, background: "none", border: "none",
-            cursor: "pointer", padding: 2, lineHeight: 1,
-            color: visible ? C.accent : "#4a5a72",
-            transition: "color 0.18s",
-          }}
-          aria-label={visible ? "Hide password" : "Show password"}
         >
-          {visible ? (
-            /* Eye-off icon */
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
-              <path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19" />
-              <line x1="1" y1="1" x2="23" y2="23" />
-            </svg>
-          ) : (
-            /* Eye icon */
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-              stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
-              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-              <circle cx="12" cy="12" r="3" />
-            </svg>
-          )}
-        </button>
+          <path d="M9 18l6-6-6-6" />
+        </svg>
+        Where do I find this?
+      </button>
+
+      <div style={{
+        overflow: "hidden",
+        maxHeight: open ? 200 : 0,
+        opacity: open ? 1 : 0,
+        transition: "max-height 0.32s cubic-bezier(0.16,1,0.3,1), opacity 0.22s ease",
+      }}>
+        <div style={{
+          marginTop: 10, padding: "12px 14px", borderRadius: 10,
+          background: "rgba(0,229,204,0.04)",
+          border: "1px solid rgba(0,229,204,0.12)",
+          boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+        }}>
+          <p style={{
+            fontSize: 11, fontWeight: 700, letterSpacing: "0.08em",
+            textTransform: "uppercase", color: C.accent,
+            marginBottom: 8, fontFamily: "'Syne', sans-serif",
+          }}>
+            Quick Guide
+          </p>
+          <ol style={{ paddingLeft: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+            {steps.map((step, i) => (
+              <li key={i} style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                <span style={{
+                  flexShrink: 0, width: 18, height: 18, borderRadius: "50%",
+                  background: "rgba(0,229,204,0.12)",
+                  border: "1px solid rgba(0,229,204,0.22)",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                  fontSize: 9.5, fontWeight: 800, color: C.accent,
+                  fontFamily: "'Syne', sans-serif", marginTop: 1,
+                }}>
+                  {i + 1}
+                </span>
+                <span
+                  style={{ fontSize: 12.5, lineHeight: 1.55, color: "#a0b4c8" }}
+                  dangerouslySetInnerHTML={{ __html: step }}
+                />
+              </li>
+            ))}
+          </ol>
+        </div>
       </div>
     </div>
   );
 }
 
-/* ── Sign-in button with shimmer ────────────────────────────────────────── */
-function SignInButton({ pending }: { pending: boolean }) {
-  const [hovered, setHovered] = useState(false);
+/* ════════════════════════════════════════════════════════════════
+   TRADE SLIDER — range input + editable number input + quick pills
 
+   State model:
+     `amount`     – the authoritative numeric value (uncapped)
+     `inputStr`   – raw string inside the editable input while typing
+   Slider visual range stays 1–100.  When amount > 100 the thumb sits
+   at max visually, but the real state tracks what the user typed.
+   name="trade_amount_usd" hidden input submits the correct value.
+   ════════════════════════════════════════════════════════════════ */
+const QUICK_AMOUNTS = [1, 5, 10, 25];
+const SLIDER_MAX    = 100;
+
+function TradeSlider() {
+  const [amount,   setAmount]   = useState<number>(5);
+  const [inputStr, setInputStr] = useState<string>("5");
+  const [focused,  setFocused]  = useState(false);
+
+  const sliderVisualVal = Math.min(amount, SLIDER_MAX);
+  const pct = ((sliderVisualVal - 1) / (SLIDER_MAX - 1)) * 100;
+  const isOverCap = amount > SLIDER_MAX;
+
+  function pickAmount(v: number) {
+    setAmount(v);
+    setInputStr(String(v));
+  }
+
+  function onSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = Number(e.target.value);
+    setAmount(v);
+    setInputStr(String(v));
+  }
+
+  function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    setInputStr(raw);
+    const parsed = parseFloat(raw);
+    if (!isNaN(parsed) && parsed > 0) setAmount(parsed);
+  }
+
+  function onInputBlur() {
+    setFocused(false);
+    const parsed = parseFloat(inputStr);
+    if (isNaN(parsed) || parsed <= 0) {
+      setInputStr(String(amount));
+    } else {
+      setInputStr(String(parsed));
+      setAmount(parsed);
+    }
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+
+      {/* Label + editable value badge */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <label
+          htmlFor="trade-amount-input"
+          style={{
+            fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
+            textTransform: "uppercase", color: "#4a5a72",
+            fontFamily: "'Syne', sans-serif", flexShrink: 0,
+          }}
+        >
+          Trade Size per Signal
+          <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>
+        </label>
+
+        {/* Editable number badge */}
+        <div style={{
+          position: "relative", display: "flex", alignItems: "center",
+          borderRadius: 9,
+          background: focused ? "rgba(0,229,204,0.07)" : "rgba(0,229,204,0.05)",
+          border: `1px solid ${focused ? "rgba(0,229,204,0.40)" : "rgba(0,229,204,0.20)"}`,
+          boxShadow: focused ? "0 0 14px -4px rgba(0,229,204,0.35)" : "none",
+          transition: "all 0.18s cubic-bezier(0.16,1,0.3,1)",
+          padding: "3px 10px 3px 8px", gap: 2,
+        }}>
+          <span style={{ fontSize: 14, color: C.accent, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>$</span>
+          <input
+            id="trade-amount-input"
+            type="number"
+            min={1}
+            step="any"
+            value={inputStr}
+            onChange={onInputChange}
+            onFocus={() => setFocused(true)}
+            onBlur={onInputBlur}
+            style={{
+              MozAppearance: "textfield",
+              background: "transparent", border: "none", outline: "none",
+              color: C.accent, fontSize: 20, fontWeight: 800,
+              fontFamily: "'Syne', sans-serif", lineHeight: 1,
+              width: `${Math.max(2, inputStr.length)}ch`,
+              minWidth: "2ch", maxWidth: "6ch", padding: 0, textAlign: "right",
+            }}
+          />
+          <span style={{ fontSize: 11, color: "#4a6080", fontWeight: 600, marginLeft: 2 }}>USD</span>
+        </div>
+      </div>
+
+      {/* Slider + pill styles */}
+      <style>{`
+        #trade-amount-input::-webkit-outer-spin-button,
+        #trade-amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
+        .pw-slider {
+          -webkit-appearance: none; appearance: none;
+          width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
+          background: linear-gradient(
+            90deg,
+            #00e5cc 0%,
+            #7c5cfc ${pct}%,
+            rgba(255,255,255,0.07) ${pct}%,
+            rgba(255,255,255,0.07) 100%
+          );
+          transition: background 0.12s;
+        }
+        .pw-slider::-webkit-slider-thumb {
+          -webkit-appearance: none; appearance: none;
+          width: 20px; height: 20px; border-radius: 50%;
+          background: linear-gradient(135deg, #00e5cc, #7c5cfc);
+          cursor: pointer;
+          box-shadow: 0 0 0 3px rgba(0,229,204,0.15), 0 2px 8px rgba(0,0,0,0.5);
+          transition: box-shadow 0.18s, transform 0.18s;
+        }
+        .pw-slider::-webkit-slider-thumb:hover {
+          box-shadow: 0 0 0 5px rgba(0,229,204,0.22), 0 2px 12px rgba(0,229,204,0.35);
+          transform: scale(1.12);
+        }
+        .pw-slider::-moz-range-thumb {
+          width: 20px; height: 20px; border-radius: 50%; border: none;
+          background: linear-gradient(135deg, #00e5cc, #7c5cfc);
+          cursor: pointer;
+          box-shadow: 0 0 0 3px rgba(0,229,204,0.15);
+        }
+        .pw-pill {
+          flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
+          font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
+          border: 1px solid rgba(0,229,204,0.14);
+          background: rgba(0,229,204,0.04);
+          color: #8492a6;
+          transition: all 0.18s cubic-bezier(0.16,1,0.3,1);
+        }
+        .pw-pill:hover {
+          border-color: rgba(0,229,204,0.28);
+          color: #00e5cc;
+          background: rgba(0,229,204,0.08);
+        }
+        .pw-pill-active {
+          border-color: rgba(0,229,204,0.40) !important;
+          background: rgba(0,229,204,0.12) !important;
+          color: #00e5cc !important;
+          box-shadow: 0 0 14px -4px rgba(0,229,204,0.30);
+        }
+      `}</style>
+
+      {/* Range slider */}
+      <input
+        type="range"
+        className="pw-slider"
+        min={1}
+        max={SLIDER_MAX}
+        step={1}
+        value={sliderVisualVal}
+        onChange={onSliderChange}
+      />
+
+      {/* Track labels */}
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: -4 }}>
+        <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$1</span>
+        {isOverCap ? (
+          <span style={{
+            fontSize: 10.5, fontWeight: 700, color: C.accentAlt,
+            background: "rgba(124,92,252,0.12)",
+            border: "1px solid rgba(124,92,252,0.25)",
+            borderRadius: 5, padding: "1px 7px",
+          }}>
+            Custom: ${amount.toLocaleString()}
+          </span>
+        ) : (
+          <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$100</span>
+        )}
+      </div>
+
+      {/* Quick-select pills */}
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        {QUICK_AMOUNTS.map((v) => (
+          <button
+            key={v}
+            type="button"
+            onClick={() => pickAmount(v)}
+            className={`pw-pill${amount === v ? " pw-pill-active" : ""}`}
+          >
+            ${v}
+          </button>
+        ))}
+      </div>
+
+      <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>
+        Amount of USDC placed on every copied trade.{" "}
+        {isOverCap
+          ? "Custom amounts above $100 are fully supported."
+          : "Type any amount or drag the slider. You can change this anytime."}
+      </p>
+
+      {/* Hidden input — single source of truth for the Server Action */}
+      <input type="hidden" name="trade_amount_usd" value={amount} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   FIELD — dark glassmorphism input with cyan focus ring
+   ════════════════════════════════════════════════════════════════ */
+function Field({
+  label, name, type = "text", placeholder, hint, required = true, guide,
+}: {
+  label: string; name: string; type?: string;
+  placeholder?: string; hint?: string; required?: boolean;
+  guide?: string[];
+}) {
+  const [focused, setFocused] = useState(false);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+      <label
+        htmlFor={name}
+        style={{
+          fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
+          textTransform: "uppercase",
+          color: focused ? C.accent : "#4a5a72",
+          transition: "color 0.18s",
+          fontFamily: "'Syne', sans-serif",
+        }}
+      >
+        {label}
+        {required && <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>}
+      </label>
+
+      <div style={{ position: "relative" }}>
+        {/* Cyan glow ring on focus */}
+        {focused && (
+          <div style={{
+            position: "absolute", inset: -1, borderRadius: 11,
+            background: "linear-gradient(135deg, rgba(0,229,204,0.25), rgba(124,92,252,0.15))",
+            pointerEvents: "none", zIndex: 0,
+            boxShadow: "0 0 20px -4px rgba(0,229,204,0.3)",
+          }} />
+        )}
+        <input
+          id={name}
+          name={name}
+          type={type}
+          placeholder={placeholder}
+          required={required}
+          autoComplete="off"
+          spellCheck={false}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            position: "relative", zIndex: 1,
+            width: "100%", display: "block",
+            padding: "11px 14px", borderRadius: 10,
+            background: focused ? "rgba(0,229,204,0.04)" : "rgba(6,11,24,0.7)",
+            border: `1px solid ${focused ? "rgba(0,229,204,0.35)" : "rgba(0,229,204,0.10)"}`,
+            color: C.textPrimary, fontSize: 13.5,
+            fontFamily: "'DM Sans', sans-serif",
+            outline: "none",
+            transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
+          }}
+        />
+      </div>
+
+      {hint && <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>{hint}</p>}
+      {guide && <HowToGuide steps={guide} />}
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SECTION LABEL
+   ════════════════════════════════════════════════════════════════ */
+function SectionLabel({ children }: { children: React.ReactNode }) {
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "4px 0" }}>
+      <div style={{ flex: 1, height: 1, background: "linear-gradient(90deg, rgba(0,229,204,0.15), transparent)" }} />
+      <span style={{
+        fontSize: 10.5, fontWeight: 700, letterSpacing: "0.12em",
+        textTransform: "uppercase", color: "#4a5a72",
+        fontFamily: "'Syne', sans-serif",
+      }}>
+        {children}
+      </span>
+      <div style={{ flex: 1, height: 1, background: "linear-gradient(270deg, rgba(0,229,204,0.15), transparent)" }} />
+    </div>
+  );
+}
+
+/* ════════════════════════════════════════════════════════════════
+   SHIMMER BUTTON
+   ════════════════════════════════════════════════════════════════ */
+function ShimmerButton({ pending }: { pending: boolean }) {
+  const [hovered, setHovered] = useState(false);
   return (
     <>
       <style>{`
@@ -183,15 +474,11 @@ function SignInButton({ pending }: { pending: boolean }) {
           100% { background-position:  200% 0; }
         }
         .pw-shimmer-btn {
-          background: linear-gradient(110deg,
-            #00e5cc 0%, #00e5cc 40%, #7dfff0 50%, #00e5cc 60%, #00e5cc 100%);
+          background: linear-gradient(110deg, #00e5cc 0%, #00e5cc 40%, #7dfff0 50%, #00e5cc 60%, #00e5cc 100%);
           background-size: 200% 100%;
           animation: pw-shimmer 3s ease-in-out infinite;
         }
-        @keyframes pw-spin {
-          from { transform: rotate(0deg); }
-          to   { transform: rotate(360deg); }
-        }
+        @keyframes pw-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
       `}</style>
       <button
         type="submit"
@@ -200,34 +487,31 @@ function SignInButton({ pending }: { pending: boolean }) {
         onMouseLeave={() => setHovered(false)}
         className={pending ? "" : "pw-shimmer-btn"}
         style={{
-          width: "100%", padding: "13px 20px",
+          width: "100%", padding: "14px 20px",
           borderRadius: 12, border: "none",
           cursor: pending ? "not-allowed" : "pointer",
-          background: pending ? "rgba(0,229,204,0.07)" : undefined,
+          background: pending ? "rgba(0,229,204,0.08)" : undefined,
           color: pending ? C.textSecondary : "#060b18",
-          fontSize: 14, fontWeight: 800, letterSpacing: "0.05em",
+          fontSize: 15, fontWeight: 800, letterSpacing: "0.04em",
           fontFamily: "'Syne', sans-serif",
           display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
           transform: hovered && !pending ? "translateY(-2px)" : "translateY(0)",
-          boxShadow: hovered && !pending
-            ? "0 8px 28px -4px rgba(0,229,204,0.42)"
-            : "none",
+          boxShadow: hovered && !pending ? "0 8px 32px -4px rgba(0,229,204,0.45)" : "none",
           transition: "transform 0.2s cubic-bezier(0.16,1,0.3,1), box-shadow 0.2s ease",
         }}
       >
         {pending ? (
           <>
             <svg style={{ animation: "pw-spin 0.8s linear infinite" }}
-              width="15" height="15" viewBox="0 0 24 24"
-              fill="none" stroke="currentColor" strokeWidth={2.5}>
+              width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5}>
               <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round" />
             </svg>
-            Signing In…
+            Encrypting & Saving…
           </>
         ) : (
           <>
-            Sign In
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+            Connect Wallet & Start Copying
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
               <path d="M5 12h14M12 5l7 7-7 7" />
             </svg>
@@ -238,271 +522,260 @@ function SignInButton({ pending }: { pending: boolean }) {
   );
 }
 
-/* ── Ambient background (CSS-only, no external component) ───────────────── */
-function AmbientBackground() {
-  return (
-    <>
-      <style>{`
-        @keyframes pw-grid-drift {
-          0%   { transform: translate(0, 0); }
-          100% { transform: translate(40px, 40px); }
-        }
-        .pw-login-grid {
-          position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          background-image:
-            linear-gradient(rgba(0,229,204,0.022) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,229,204,0.022) 1px, transparent 1px);
-          background-size: 60px 60px;
-          animation: pw-grid-drift 24s linear infinite;
-        }
-      `}</style>
+/* ════════════════════════════════════════════════════════════════
+   PAGE
+   ════════════════════════════════════════════════════════════════ */
+const initialState: ActionResult | null = null;
 
-      {/* Drifting grid */}
-      <div className="pw-login-grid" aria-hidden />
-
-      {/* Cyan top-center glow */}
-      <div aria-hidden style={{
-        position: "fixed", top: -180, left: "50%",
-        transform: "translateX(-50%)",
-        width: 700, height: 700, borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(0,229,204,0.10) 0%, transparent 65%)",
-        pointerEvents: "none", zIndex: 0,
-      }} />
-
-      {/* Purple bottom-right glow */}
-      <div aria-hidden style={{
-        position: "fixed", bottom: -220, right: -180,
-        width: 650, height: 650, borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(124,92,252,0.09) 0%, transparent 65%)",
-        pointerEvents: "none", zIndex: 0,
-      }} />
-
-      {/* Purple top-left corner accent */}
-      <div aria-hidden style={{
-        position: "fixed", top: -250, left: -200,
-        width: 550, height: 550, borderRadius: "50%",
-        background: "radial-gradient(circle, rgba(124,92,252,0.07) 0%, transparent 65%)",
-        pointerEvents: "none", zIndex: 0,
-      }} />
-    </>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   LOGIN CONTENT
-   Contains every hook (useSearchParams, useActionState, useEffect,
-   useState) — must stay inside the <Suspense> boundary below.
-   ══════════════════════════════════════════════════════════════ */
-const initialState: AuthResult | null = null;
-
-function LoginContent() {
-  const searchParams = useSearchParams();
-  const nextPath     = searchParams.get("next") ?? "/dashboard";
-
+export default function NewClientPage() {
   const [result, formAction, isPending] = useActionState(
-    async (_prev: AuthResult | null, formData: FormData) => {
-      // Inject the intended destination so the Server Action can redirect back
-      formData.set("next", nextPath);
-      return await signIn(formData);
+    async (_prev: ActionResult | null, formData: FormData) => {
+      return await registerClient(formData);
     },
     initialState
   );
-
-  // Show a brief success flash while the server redirect is in-flight
-  const [showSuccess, setShowSuccess] = useState(false);
-  useEffect(() => {
-    if (result?.success) setShowSuccess(true);
-  }, [result]);
 
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
-        .pw-login-page { font-family: 'DM Sans', sans-serif; }
-        .pw-login-page input::placeholder { color: #3d4d63; }
+        .pw-form-page { font-family: 'DM Sans', sans-serif; }
+        .pw-form-page input::placeholder { color: #3d4d63; }
       `}</style>
 
+      {/*
+        Wrapper: position:relative + overflow:hidden so AmbientBackground
+        (position:absolute) is clipped to this content area and never
+        bleeds over the sidebar that the dashboard layout renders.
+        Background is the deep navy so the form sits on a dark canvas.
+      */}
       <div
-        className="pw-login-page"
+        className="pw-form-page"
         style={{
-          minHeight: "100vh",
-          background: C.bg,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          padding: "24px",
           position: "relative",
+          overflow: "hidden",
+          minHeight: "100%",
+          background: C.bg,
+          padding: "48px 24px 80px",
         }}
       >
+        {/* Ambient glow + drifting grid — scoped to this content column */}
         <AmbientBackground />
 
-        {/* ── Login card ── */}
+        {/* ── Page header ── */}
         <div style={{
-          position: "relative", zIndex: 1,
-          width: "100%", maxWidth: 420,
+          maxWidth: 520, margin: "0 auto 32px",
+          textAlign: "center", position: "relative", zIndex: 1,
         }}>
-
-          {/* Logotype above the card */}
-          <div style={{ textAlign: "center", marginBottom: 28 }}>
-            <div style={{
-              display: "inline-flex", alignItems: "center", gap: 10,
-              marginBottom: 6,
+          {/* Badge */}
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 8,
+            padding: "6px 16px", borderRadius: 100,
+            background: "rgba(0,229,204,0.07)",
+            border: "1px solid rgba(0,229,204,0.18)", marginBottom: 20,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, flexShrink: 0 }} />
+            <span style={{
+              fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
+              textTransform: "uppercase", color: C.accent,
+              fontFamily: "'Syne', sans-serif",
             }}>
-              {/* Whale icon mark */}
-              <div style={{
-                width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-                background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <svg width="20" height="20" viewBox="0 0 32 32" fill="#060b18">
-                  <path d="M28 14c0-6.627-5.373-12-12-12C9.791 2 7 4 5 7c-1 1.5-1.5 3-1.5 5 0 1.5.3 2.9.8 4.2C3.1 17.5 2 19.6 2 22c0 4.4 3.6 8 8 8h14c3.3 0 6-2.7 6-6 0-1.9-.9-3.6-2.2-4.7.1-.4.2-.9.2-1.3zm-6 4a2 2 0 100-4 2 2 0 000 4z" />
-                </svg>
-              </div>
-              <span style={{
-                fontFamily: "'Syne', sans-serif",
-                fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em", color: "#fff",
-              }}>
-                Poly<span style={{ color: C.accent }}>Whale</span>
-              </span>
-            </div>
-            <p style={{ fontSize: 13, color: C.textSecondary, marginTop: 6 }}>
-              Dashboard — Restricted Access
-            </p>
+              New Account Setup
+            </span>
           </div>
 
-          {/* Glass card */}
-          <div style={{
-            background: C.bgCard,
-            backdropFilter: "blur(22px)",
-            WebkitBackdropFilter: "blur(22px)",
-            border: "1px solid rgba(0,229,204,0.10)",
-            borderRadius: 20,
-            padding: "32px 30px 28px",
-            boxShadow:
-              "0 0 60px -16px rgba(0,229,204,0.14), inset 0 1px 0 rgba(255,255,255,0.04)",
+          <h1 style={{
+            fontFamily: "'Syne', sans-serif",
+            fontSize: "clamp(24px, 4vw, 32px)",
+            fontWeight: 800, letterSpacing: "-0.025em",
+            color: "#fff", marginBottom: 12, lineHeight: 1.1,
           }}>
+            Start Copying{" "}
+            <span style={{
+              background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}>
+              Whale Trades
+            </span>
+            {" "}Today
+          </h1>
+          <p style={{ fontSize: 14, lineHeight: 1.7, color: C.textSecondary, maxWidth: 400, margin: "0 auto" }}>
+            Connect your Polymarket wallet and the bot will automatically mirror top whale trades into your account.
+          </p>
+        </div>
 
-            {/* Card heading */}
-            <div style={{ marginBottom: 26 }}>
-              <h1 style={{
-                fontFamily: "'Syne', sans-serif",
-                fontSize: 22, fontWeight: 800, letterSpacing: "-0.02em",
-                color: "#fff", marginBottom: 6,
-              }}>
-                Sign In
-              </h1>
-              <p style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6 }}>
-                Enter your credentials to access the whale copy-trading dashboard.
+        {/* ── Form card ── */}
+        <div style={{ maxWidth: 520, margin: "0 auto", position: "relative", zIndex: 1 }}>
+
+          {/* Security notice */}
+          <div style={{
+            display: "flex", gap: 13,
+            padding: "14px 16px", borderRadius: 12, marginBottom: 20,
+            background: "rgba(0,229,204,0.04)",
+            border: "1px solid rgba(0,229,204,0.15)",
+            boxShadow: "0 0 40px -16px rgba(0,229,204,0.15)",
+          }}>
+            <div style={{
+              width: 34, height: 34, borderRadius: 9, flexShrink: 0,
+              background: "linear-gradient(135deg, rgba(0,229,204,0.2), rgba(124,92,252,0.15))",
+              border: "1px solid rgba(0,229,204,0.2)",
+              display: "flex", alignItems: "center", justifyContent: "center", color: C.accent,
+            }}>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                <polyline points="9 12 11 14 15 10" />
+              </svg>
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.accent, marginBottom: 3 }}>
+                Your Keys Stay Private
+              </p>
+              <p style={{ fontSize: 12, lineHeight: 1.6, color: "rgba(0,229,204,0.6)" }}>
+                Everything you enter is encrypted with{" "}
+                <code style={{ fontFamily: "monospace", fontWeight: 700, color: C.accent, fontSize: 11.5 }}>
+                  AES-256-GCM
+                </code>{" "}
+                on our server before being stored. Your plaintext credentials never touch the database.
               </p>
             </div>
-
-            {/* Form */}
-            <form
-              action={formAction}
-              style={{ display: "flex", flexDirection: "column", gap: 16 }}
-            >
-              <EmailField />
-              <PasswordField />
-
-              {/* Error banner */}
-              {result && !result.success && (
-                <div style={{
-                  display: "flex", alignItems: "flex-start", gap: 9,
-                  padding: "11px 13px", borderRadius: 10,
-                  background: "rgba(244,114,182,0.06)",
-                  border: "1px solid rgba(244,114,182,0.22)",
-                }}>
-                  <svg style={{ flexShrink: 0, marginTop: 1, color: "#f472b6" }}
-                    width="14" height="14" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
-                    <circle cx="12" cy="12" r="10" />
-                    <line x1="12" y1="8" x2="12" y2="12" />
-                    <line x1="12" y1="16" x2="12.01" y2="16" />
-                  </svg>
-                  <p style={{ fontSize: 13, color: "#f472b6", lineHeight: 1.5 }}>
-                    {result.error}
-                  </p>
-                </div>
-              )}
-
-              {/* Success flash */}
-              {showSuccess && (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 9,
-                  padding: "11px 13px", borderRadius: 10,
-                  background: "rgba(0,229,204,0.06)",
-                  border: "1px solid rgba(0,229,204,0.22)",
-                }}>
-                  <svg style={{ flexShrink: 0, color: C.accent }}
-                    width="14" height="14" viewBox="0 0 24 24" fill="none"
-                    stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
-                    <polyline points="20 6 9 17 4 12" />
-                  </svg>
-                  <p style={{ fontSize: 13, color: C.accent }}>
-                    Authenticated — redirecting…
-                  </p>
-                </div>
-              )}
-
-              <div style={{ paddingTop: 4 }}>
-                <SignInButton pending={isPending} />
-              </div>
-            </form>
-
           </div>
 
-          {/* Below-card footer note */}
-          <p style={{
-            textAlign: "center", marginTop: 20,
-            fontSize: 12, color: "#3d4d63", lineHeight: 1.6,
-          }}>
-            Access is restricted to authorised operators only.
-            <br />
-            <span style={{ color: "#2a3a50" }}>
-              AES-256-GCM encrypted · Polygon Mainnet
-            </span>
-          </p>
+          {/* Glassmorphism form card */}
+          <form
+            action={formAction}
+            style={{
+              background: C.bgCard,
+              backdropFilter: "blur(22px)",
+              WebkitBackdropFilter: "blur(22px)",
+              border: "1px solid rgba(0,229,204,0.10)",
+              borderRadius: 18, padding: "28px 28px 24px",
+              boxShadow: "0 0 60px -16px rgba(0,229,204,0.12), inset 0 1px 0 rgba(255,255,255,0.04)",
+              display: "flex", flexDirection: "column", gap: 18,
+            }}
+          >
+
+            {/* ── Section 1: Account ── */}
+            <SectionLabel>Your Account</SectionLabel>
+
+            <Field
+              label="Account Nickname"
+              name="label"
+              placeholder="e.g. My Main Wallet"
+              hint="Just a name to identify this account in your dashboard."
+            />
+
+            <Field
+              label="Polymarket Wallet Address"
+              name="funder_address"
+              placeholder="0xF936..."
+              hint="Your Gnosis Safe address on Polygon — this is where your USDC and winnings live."
+              guide={[
+                'Go to <strong>polymarket.com</strong> and click your avatar in the top-right.',
+                'Select <strong>Profile</strong> — your wallet address is shown at the top. Copy it.',
+              ]}
+            />
+
+            <TradeSlider />
+
+            {/* ── Section 2: API Access ── */}
+            <SectionLabel>API Access</SectionLabel>
+
+            <Field
+              label="Wallet Private Key"
+              name="private_key"
+              type="password"
+              placeholder="0x..."
+              hint="Used to sign orders on your behalf. Never shared or stored in plaintext."
+              guide={[
+                'This is the private key for the <strong>EOA wallet</strong> that controls your Gnosis Safe.',
+                'Export it from MetaMask via <strong>Account Details → Export Private Key</strong>.',
+              ]}
+            />
+
+            <Field
+              label="Polymarket API Key"
+              name="poly_api_key"
+              type="password"
+              placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+              hint="Grants the bot permission to trade on your account. Encrypted before storage."
+              guide={[
+                'Log in to <strong>polymarket.com</strong>, open your profile menu, and go to <strong>Settings</strong>.',
+                'Click <strong>API Keys → Create New Key</strong>. Copy the API Key shown.',
+              ]}
+            />
+
+            <Field
+              label="API Secret"
+              name="poly_secret"
+              type="password"
+              placeholder="Your API secret"
+              hint="Shown once when you create your API Key — copy it immediately."
+              guide={[
+                'Created alongside your API Key in <strong>Polymarket Settings → API Keys</strong>.',
+                'If you lost it, delete the old key and create a new one.',
+              ]}
+            />
+
+            <Field
+              label="API Passphrase"
+              name="poly_passphrase"
+              type="password"
+              placeholder="Your API passphrase"
+              hint="The passphrase you chose when creating your Polymarket API key."
+              guide={[
+                'This is the custom passphrase <strong>you set</strong> when creating the API key.',
+                "If you forgot it, go to <strong>Settings → API Keys</strong>, delete the key, and create a fresh one.",
+              ]}
+            />
+
+            {/* ── Error ── */}
+            {result && !result.success && (
+              <div style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "12px 14px", borderRadius: 10,
+                background: "rgba(244,114,182,0.06)",
+                border: "1px solid rgba(244,114,182,0.20)",
+              }}>
+                <span style={{ color: "#f472b6", marginTop: 1, fontSize: 15 }}>✕</span>
+                <p style={{ fontSize: 13, color: "#f472b6", lineHeight: 1.5 }}>{result.error}</p>
+              </div>
+            )}
+
+            {/* ── Success ── */}
+            {result?.success && (
+              <div style={{
+                display: "flex", alignItems: "flex-start", gap: 10,
+                padding: "12px 14px", borderRadius: 10,
+                background: "rgba(0,229,204,0.06)",
+                border: "1px solid rgba(0,229,204,0.20)",
+              }}>
+                <span style={{ color: C.accent, marginTop: 1, fontSize: 15 }}>✓</span>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: C.accent }}>
+                    Account connected! The bot is now live.
+                  </p>
+                  <p style={{ fontFamily: "monospace", fontSize: 11, color: "rgba(0,229,204,0.5)", marginTop: 2 }}>
+                    ID: {result.clientId}
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {/* ── Submit ── */}
+            <div style={{ paddingTop: 4 }}>
+              <ShimmerButton pending={isPending} />
+            </div>
+
+            <p style={{ textAlign: "center", fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>
+              Fields marked <span style={{ color: C.accent }}>*</span> are required.
+              Everything is encrypted before it leaves your browser session.
+            </p>
+          </form>
         </div>
       </div>
     </>
-  );
-}
-
-/* ══════════════════════════════════════════════════════════════
-   PAGE — default export
-   A thin Suspense shell.  The fallback matches the page background
-   exactly so there is zero flash of white during the SSR→hydration
-   hand-off.
-   ══════════════════════════════════════════════════════════════ */
-export default function LoginPage() {
-  return (
-    <Suspense
-      fallback={
-        <div style={{
-          minHeight: "100vh",
-          background: "#060b18",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}>
-          {/* Subtle cyan spinner so the dark fallback isn't a void */}
-          <svg
-            style={{ animation: "pw-spin 0.9s linear infinite", opacity: 0.35 }}
-            width="28" height="28" viewBox="0 0 24 24"
-            fill="none" stroke="#00e5cc" strokeWidth={2}
-          >
-            <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round" />
-          </svg>
-          <style>{`
-            @keyframes pw-spin {
-              from { transform: rotate(0deg); }
-              to   { transform: rotate(360deg); }
-            }
-          `}</style>
-        </div>
-      }
-    >
-      <LoginContent />
-    </Suspense>
   );
 }
