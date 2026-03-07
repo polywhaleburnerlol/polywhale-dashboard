@@ -9,7 +9,7 @@
 
 import { useActionState, useState } from "react";
 import { registerClient, type ActionResult } from "@/app/actions/client";
-import { WhaleSonarBackground } from "@/components/WhaleSonarBackground";
+import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
 
 /* ── Design tokens ──────────────────────────────────────────────────────── */
 const C = {
@@ -520,8 +520,8 @@ export default function NewClientPage() {
         minHeight: "100vh", background: C.bg,
         padding: "48px 24px 80px", position: "relative",
       }}>
-        {/* ── Ambient sonar background — fixed, z-index: 0, pointer-events: none ── */}
-        <WhaleSonarBackground />
+        {/* ── Polygon mesh background — fixed, z-index: 0, pointer-events: none ── */}
+        <PolygonMeshBackground />
 
         {/* ── Page header ── */}
         <div style={{
