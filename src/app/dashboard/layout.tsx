@@ -6,42 +6,34 @@ import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
 /**
  * src/app/dashboard/layout.tsx — persistent shell for all /dashboard/* routes
  *
- * ── What lives here ───────────────────────────────────────────────────────────
+ * ── What this file does ───────────────────────────────────────────────────────
+ * Provides the visual container every /dashboard/* page renders inside:
  *   <PolygonMeshBackground />   animated SVG mesh (position:fixed, z-index:0)
  *   <aside>                     glass sidebar     (z-index:10)
  *   <header>                    sticky top bar    (z-index:5)
- *   <main>                      scrollable slot for {children}
+ *   <main>                      scrollable page slot for {children}
+ *
+ * ── What this file DOES NOT do ────────────────────────────────────────────────
+ * Zero redirect() calls. Zero Supabase imports. Zero auth logic.
+ * Auth is handled exclusively by middleware.ts (Edge layer guard) and
+ * src/app/page.tsx (entry-point routing).
  *
  * ── Background architecture ───────────────────────────────────────────────────
- * PolygonMeshBackground uses position:fixed so it fills the entire viewport
- * and persists across all client-side navigations without re-mounting.
- * The outer wrapper uses position:relative to establish a stacking context
- * for the sidebar and main column z-indexes, but deliberately has NO
- * overflow:hidden — a fixed element always escapes overflow clipping and
- * adding it would only create an unintended stacking context.
- *
- * ── No security logic here ───────────────────────────────────────────────────
- * Zero redirect() calls.  Auth is handled exclusively by:
- *   middleware.ts   — Edge-layer guard on every /dashboard/* request
- *   src/app/page.tsx — Entry-point router for "/"
- *
- * ── Z-index contract ──────────────────────────────────────────────────────────
- *   0   PolygonMeshBackground  (fixed, behind everything)
- *   1   Main content column
- *   5   Sticky top bar
- *   10  Sidebar
+ * PolygonMeshBackground is position:fixed so it fills the entire viewport and
+ * persists across client-side navigations without re-mounting.
+ * Outer wrapper: position:relative (stacking context for z-indexes) but
+ * NO overflow:hidden — a fixed child escapes it and it creates a stacking
+ * context that can break future dropdown/modal UIs.
+ * overflow:hidden lives only on the main column to prevent horizontal bleed.
  */
 
-/* ── Design tokens ──────────────────────────────────────────────────────────── */
 const C = {
   bg:            "#060b18",
   accent:        "#00e5cc",
   accentAlt:     "#7c5cfc",
-  textPrimary:   "#e2e8f0",
   textSecondary: "#8492a6",
 };
 
-/* ── Nav items ──────────────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
   {
     href:  "/dashboard",
@@ -108,11 +100,9 @@ const NAV_ITEMS = [
   },
 ];
 
-/* ── Layout component ────────────────────────────────────────────────────────── */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <>
-      {/* ─── Global styles scoped to the dashboard shell ───────────────────── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 
@@ -121,11 +111,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         /* Glass sidebar */
         .pw-sidebar {
-          position: relative;
-          z-index: 10;
+          position: relative; z-index: 10;
           background: rgba(10,16,32,0.88);
-          backdrop-filter: blur(20px);
-          -webkit-backdrop-filter: blur(20px);
+          backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
           border-right: 1px solid rgba(0,229,204,0.10);
         }
         .pw-sidebar ::-webkit-scrollbar       { width: 4px; }
@@ -134,16 +122,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
         /* Sticky top bar */
         .pw-topbar {
-          position: sticky;
-          top: 0;
-          z-index: 5;
+          position: sticky; top: 0; z-index: 5;
           background: rgba(6,11,24,0.92);
-          backdrop-filter: blur(16px);
-          -webkit-backdrop-filter: blur(16px);
+          backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid rgba(0,229,204,0.08);
         }
 
-        /* Nav link */
+        /* Nav links */
         .pw-nav-link {
           display: flex; align-items: center; gap: 11px;
           padding: 10px 12px; border-radius: 10px;
@@ -153,25 +138,21 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           text-decoration: none; position: relative; overflow: hidden;
         }
         .pw-nav-link:hover {
-          color: #00e5cc;
-          background: rgba(0,229,204,0.06);
+          color: #00e5cc; background: rgba(0,229,204,0.06);
           border-color: rgba(0,229,204,0.12);
         }
         .pw-nav-link[data-active="true"] {
-          color: #00e5cc;
-          background: rgba(0,229,204,0.08);
+          color: #00e5cc; background: rgba(0,229,204,0.08);
           border-color: rgba(0,229,204,0.20);
           box-shadow: 0 0 20px -6px rgba(0,229,204,0.25);
         }
-        /* Cyan-to-purple left-edge indicator on active link */
         .pw-nav-link[data-active="true"]::before {
-          content: '';
-          position: absolute; left: 0; top: 20%; bottom: 20%;
+          content: ''; position: absolute; left: 0; top: 20%; bottom: 20%;
           width: 2px; border-radius: 2px;
           background: linear-gradient(180deg, #00e5cc, #7c5cfc);
         }
 
-        /* Engine status pulsing dot */
+        /* Engine pulse */
         @keyframes pw-ping {
           0%   { transform: scale(1);   opacity: 0.6; }
           70%  { transform: scale(2.2); opacity: 0;   }
@@ -179,24 +160,22 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         .pw-ping { animation: pw-ping 2s cubic-bezier(0,0,0.2,1) infinite; }
 
-        /* Purple chain badge */
+        /* Chain badge */
         .pw-chain-badge {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 5px 12px; border-radius: 100px;
-          background: rgba(124,92,252,0.08);
-          border: 1px solid rgba(124,92,252,0.18);
-          font-size: 11.5px; font-weight: 600;
-          color: #a78bfa; letter-spacing: 0.01em;
+          background: rgba(124,92,252,0.08); border: 1px solid rgba(124,92,252,0.18);
+          font-size: 11.5px; font-weight: 600; color: #a78bfa; letter-spacing: 0.01em;
         }
 
-        /* Gradient separator line */
+        /* Gradient separator */
         .pw-sep {
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(0,229,204,0.12), transparent);
           margin: 8px 12px;
         }
 
-        /* Sidebar back link */
+        /* Back link */
         .pw-back {
           display: flex; align-items: center; gap: 6px;
           font-size: 12px; font-weight: 500; color: #8492a6;
@@ -206,46 +185,32 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       `}</style>
 
       {/*
-        ─── LAYER 0: Animated mesh background ────────────────────────────────
-        position:fixed + z-index:0.  Fills the full viewport, sits behind
-        everything, and survives client-side navigation without re-mounting.
-        Placed BEFORE the flex wrapper so it isn't constrained by flex layout.
+        LAYER 0 — PolygonMeshBackground (position:fixed, z-index:0)
+        Placed BEFORE the flex wrapper so it's outside normal flex flow.
+        Fills the entire viewport; persists across client-side navigations.
       */}
       <PolygonMeshBackground />
 
       {/*
-        ─── Outer flex shell ──────────────────────────────────────────────────
-        position:relative  → establishes the stacking context that gives
-                             z-index meaning to sidebar and main column.
-        background:transparent → lets the fixed mesh show through.
-        NO overflow:hidden  → position:fixed children escape it regardless,
-                              and it would create an unwanted stacking context.
+        Outer flex shell.
+        position:relative → stacking context for sidebar/main z-indexes.
+        background:transparent → fixed mesh shows through.
+        NO overflow:hidden → fixed children escape it; would create unwanted stacking context.
       */}
       <div
         className="pw-layout"
-        style={{
-          display: "flex",
-          minHeight: "100vh",
-          position: "relative",
-          background: "transparent",
-        }}
+        style={{ display: "flex", minHeight: "100vh", position: "relative", background: "transparent" }}
       >
 
-        {/* ════════════════════════════════════════════════════════════════
-            SIDEBAR — z-index:10, fixed width, never scrolls
-            ════════════════════════════════════════════════════════════════ */}
+        {/* ═══ SIDEBAR  z-index:10 ════════════════════════════════════════════ */}
         <aside
           className="pw-sidebar"
-          style={{
-            width: 236, flexShrink: 0,
-            display: "flex", flexDirection: "column",
-          }}
+          style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
         >
           {/* Logotype */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
-            padding: "20px 20px 18px",
-            borderBottom: "1px solid rgba(0,229,204,0.08)",
+            padding: "20px 20px 18px", borderBottom: "1px solid rgba(0,229,204,0.08)",
           }}>
             <div style={{
               width: 34, height: 34, borderRadius: 10, flexShrink: 0,
@@ -263,13 +228,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </span>
           </div>
 
-          {/* Engine status pill */}
+          {/* Engine status */}
           <div style={{ padding: "14px 14px 0" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 9,
               padding: "9px 13px", borderRadius: 10,
-              background: "rgba(0,229,204,0.05)",
-              border: "1px solid rgba(0,229,204,0.15)",
+              background: "rgba(0,229,204,0.05)", border: "1px solid rgba(0,229,204,0.15)",
             }}>
               <span style={{ position: "relative", display: "flex", width: 9, height: 9, flexShrink: 0 }}>
                 <span className="pw-ping" style={{
@@ -294,8 +258,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <nav style={{ flex: 1, overflowY: "auto", padding: "16px 10px 8px" }}>
             <p style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.10em",
-              textTransform: "uppercase", color: "#3d4d63",
-              padding: "0 8px 8px",
+              textTransform: "uppercase", color: "#3d4d63", padding: "0 8px 8px",
             }}>
               Navigation
             </p>
@@ -312,11 +275,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             <div className="pw-sep" style={{ marginTop: 16 }} />
           </nav>
 
-          {/* Sidebar footer */}
-          <div style={{
-            padding: "14px 18px 20px",
-            borderTop: "1px solid rgba(0,229,204,0.07)",
-          }}>
+          {/* Footer */}
+          <div style={{ padding: "14px 18px 20px", borderTop: "1px solid rgba(0,229,204,0.07)" }}>
             <Link href="/" className="pw-back" style={{ marginBottom: 12 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
@@ -330,19 +290,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        {/* ════════════════════════════════════════════════════════════════
-            MAIN COLUMN — z-index:1
-            overflow:hidden on THIS div only prevents horizontal bleed
-            without fighting the fixed mesh background.
-            Only <main> scrolls; the topbar stays sticky at top:0.
-            ════════════════════════════════════════════════════════════════ */}
+        {/* ═══ MAIN COLUMN  z-index:1 ══════════════════════════════════════════
+            overflow:hidden on THIS div only (not outer wrapper) — prevents
+            horizontal bleed without fighting the fixed mesh background.
+            Only <main> scrolls; topbar stays sticky at top:0.
+        */}
         <div style={{
           flex: 1, minWidth: 0,
           display: "flex", flexDirection: "column",
           position: "relative", zIndex: 1,
           overflow: "hidden",
         }}>
-
           {/* Sticky top bar */}
           <header className="pw-topbar" style={{
             height: 60, flexShrink: 0,
@@ -358,25 +316,18 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
                 Dashboard
               </span>
             </div>
-
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
               <span className="pw-chain-badge">
-                <span style={{
-                  width: 6, height: 6, borderRadius: "50%",
-                  background: C.accentAlt, flexShrink: 0,
-                }} />
+                <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.accentAlt, flexShrink: 0 }} />
                 Polygon Mainnet
               </span>
-
               <button
                 aria-label="Notifications"
                 style={{
                   width: 34, height: 34, borderRadius: 9, flexShrink: 0,
                   display: "flex", alignItems: "center", justifyContent: "center",
-                  background: "rgba(0,229,204,0.04)",
-                  border: "1px solid rgba(0,229,204,0.10)",
-                  color: C.textSecondary, cursor: "pointer",
-                  transition: "all 0.18s",
+                  background: "rgba(0,229,204,0.04)", border: "1px solid rgba(0,229,204,0.10)",
+                  color: C.textSecondary, cursor: "pointer", transition: "all 0.18s",
                 }}
               >
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
@@ -392,9 +343,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           <main style={{ flex: 1, overflowY: "auto" }}>
             {children}
           </main>
+        </div>
 
-        </div>{/* /main column */}
-      </div>{/* /outer shell */}
+      </div>
     </>
   );
 }
