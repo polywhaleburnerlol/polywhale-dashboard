@@ -7,32 +7,37 @@ import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
  * src/app/dashboard/layout.tsx
  *
  * Persistent shell for every /dashboard/* route.
+ * Contains: animated mesh background, fixed sidebar, sticky top bar,
+ * and a scrollable main content column.
  *
- * ── Background architecture ─────────────────────────────────────────────────
- * <PolygonMeshBackground /> is position:fixed; z-index:0; inset:0 — it paints
- * the animated mesh behind the ENTIRE viewport and persists across navigation.
- * The sidebar (z-index:10) and main column (z-index:1) stack above it.
+ * ── Background ───────────────────────────────────────────────────────────────
+ * <PolygonMeshBackground /> is position:fixed; z-index:0 — it fills the entire
+ * viewport and persists seamlessly across client-side navigations.
+ * The outer wrapper has position:relative (to anchor z-index values for
+ * sidebar and main column) but NO overflow:hidden — a position:fixed child
+ * always escapes overflow constraints, so adding it would only create an
+ * accidental stacking context without providing any benefit.
  *
- * The outer wrapper deliberately does NOT use overflow:hidden because
- * position:fixed children ignore overflow constraints on their ancestors
- * (they always position relative to the viewport). overflow:hidden here
- * would only create an accidental stacking context without clipping the mesh.
+ * ── No redirects ─────────────────────────────────────────────────────────────
+ * Zero redirect() calls here. Auth is handled by:
+ *   1. middleware.ts  — guards every /dashboard/* request server-side
+ *   2. src/app/page.tsx — routes the root "/" entry point
  *
- * ── No redirects ────────────────────────────────────────────────────────────
- * This file contains ZERO redirect() calls. Auth guarding lives exclusively
- * in middleware.ts at the project root.
+ * ── Z-index stack ────────────────────────────────────────────────────────────
+ *   z-index: 0   PolygonMeshBackground (position:fixed)
+ *   z-index: 1   Main content column
+ *   z-index: 10  Sidebar
  */
 
-/* ── Design system tokens ───────────────────────────────────────────────── */
+/* ── Design tokens ──────────────────────────────────────────────────────── */
 const C = {
   bg:            "#060b18",
   accent:        "#00e5cc",
   accentAlt:     "#7c5cfc",
-  textPrimary:   "#e2e8f0",
   textSecondary: "#8492a6",
 };
 
-/* ── Nav item definitions ───────────────────────────────────────────────── */
+/* ── Nav items ──────────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
   {
     href: "/dashboard",
@@ -99,17 +104,17 @@ const NAV_ITEMS = [
   },
 ];
 
-/* ── Dashboard Layout ───────────────────────────────────────────────────── */
+/* ── Layout ─────────────────────────────────────────────────────────────── */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 
-        .pw-layout      { font-family: 'DM Sans', sans-serif; }
+        .pw-layout       { font-family: 'DM Sans', sans-serif; }
         .pw-font-display { font-family: 'Syne', sans-serif; }
 
-        /* ── Sidebar glass panel ── */
+        /* ── Glass sidebar ── */
         .pw-sidebar {
           position: relative;
           z-index: 10;
@@ -122,7 +127,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         .pw-sidebar ::-webkit-scrollbar-track { background: transparent; }
         .pw-sidebar ::-webkit-scrollbar-thumb { background: rgba(0,229,204,0.15); border-radius: 4px; }
 
-        /* ── Top bar ── */
+        /* ── Sticky top bar ── */
         .pw-topbar {
           background: rgba(6,11,24,0.90);
           backdrop-filter: blur(16px);
@@ -130,7 +135,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-bottom: 1px solid rgba(0,229,204,0.08);
         }
 
-        /* ── Nav link base + states ── */
+        /* ── Nav link base ── */
         .pw-nav-link {
           display: flex; align-items: center; gap: 11px;
           padding: 10px 12px; border-radius: 10px;
@@ -150,7 +155,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-color: rgba(0,229,204,0.20);
           box-shadow: 0 0 20px -6px rgba(0,229,204,0.25);
         }
-        /* Active left-edge accent bar */
         .pw-nav-link[data-active="true"]::before {
           content: '';
           position: absolute; left: 0; top: 20%; bottom: 20%;
@@ -158,11 +162,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           background: linear-gradient(180deg, #00e5cc, #7c5cfc);
         }
 
-        /* ── Engine status pulse ── */
+        /* ── Engine pulse ── */
         @keyframes pw-ping {
-          0%   { transform: scale(1); opacity: 0.6; }
-          70%  { transform: scale(2.2); opacity: 0; }
-          100% { transform: scale(2.2); opacity: 0; }
+          0%   { transform: scale(1);   opacity: 0.6; }
+          70%  { transform: scale(2.2); opacity: 0;   }
+          100% { transform: scale(2.2); opacity: 0;   }
         }
         .pw-ping { animation: pw-ping 2s cubic-bezier(0,0,0.2,1) infinite; }
 
@@ -193,36 +197,35 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       `}</style>
 
       {/*
-        ── LAYER 0: PolygonMeshBackground ───────────────────────────────────
-        position:fixed; z-index:0; inset:0 — lives outside normal flow,
-        persists across all /dashboard/* navigations, never causes reflow.
-        Imported as a client component — safe to use inside a Server Component.
+        LAYER 0 — PolygonMeshBackground
+        position:fixed; z-index:0  →  full viewport, persists across navigations.
+        Must sit OUTSIDE the flex wrapper so it's not constrained by flex layout.
       */}
       <PolygonMeshBackground />
 
       {/*
-        ── Outer shell ──────────────────────────────────────────────────────
-        position:relative creates a stacking context so z-index values on
-        sidebar (10) and main column (1) are meaningful.
-        NO overflow:hidden — a fixed child ignores it and it would create a
-        spurious stacking context that could clip dropdown menus later.
-        min-h-screen ensures the shell always fills the viewport height.
+        Outer shell — position:relative creates the stacking context that makes
+        z-index on sidebar (10) and main (1) meaningful relative to each other.
+        background:transparent lets the fixed mesh show through.
+        NO overflow:hidden — position:fixed children ignore it anyway, and it
+        would create a stacking context that can clip future popover/modal UIs.
       */}
       <div
         className="pw-layout"
         style={{
           display: "flex",
           minHeight: "100vh",
-          background: "transparent",   /* mesh provides the background */
+          background: "transparent",
           position: "relative",
         }}
       >
 
-        {/* ══ LAYER 10: Sidebar ════════════════════════════════════════════ */}
+        {/* ══ SIDEBAR  z-index:10 ══════════════════════════════════════════ */}
         <aside
           className="pw-sidebar"
           style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
         >
+
           {/* Logotype */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
@@ -245,7 +248,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </span>
           </div>
 
-          {/* Engine status pill */}
+          {/* Engine status */}
           <div style={{ padding: "14px 14px 0" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 9,
@@ -282,7 +285,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               Navigation
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.map(item => (
                 <li key={item.href}>
                   <ActiveNavLink href={item.href} exact={item.exact} className="pw-nav-link">
                     {item.icon}
@@ -313,11 +316,9 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        {/* ══ LAYER 1: Main column ═════════════════════════════════════════
-            flex:1 takes the remaining width after sidebar.
-            display:flex flex-col so the topbar sticks and only <main> scrolls.
-            overflow:hidden on THIS column only, not the outer wrapper —
-            prevents horizontal overflow without fighting the fixed mesh.
+        {/* ══ MAIN COLUMN  z-index:1 ═══════════════════════════════════════
+            flex:1 + overflow:hidden prevents horizontal bleed.
+            Only <main> scrolls; topbar stays pinned at the top.
         */}
         <div style={{
           display: "flex",
@@ -331,11 +332,8 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
 
           {/* Sticky top bar */}
           <header className="pw-topbar" style={{
-            height: 60,
-            flexShrink: 0,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
+            height: 60, flexShrink: 0,
+            display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "0 28px",
           }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -377,7 +375,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          {/* ── Scrollable page slot — every /dashboard/* page renders here ── */}
+          {/* ── Scrollable page slot ── */}
           <main style={{ flex: 1, overflowY: "auto" }}>
             {children}
           </main>
