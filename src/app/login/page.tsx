@@ -13,9 +13,13 @@
  *   Glass card:  rgba(12,20,40,0.65) + backdrop-filter: blur(20px)
  *
  * Backend: signIn Server Action in @/app/actions/auth.ts
+ *
+ * Fix: useSearchParams() must be inside a <Suspense> boundary at build time.
+ * Solution: all hook usage lives in <LoginContent />, and the default export
+ * <LoginPage /> is a pure Suspense shell with a matching dark fallback.
  */
 
-import { useActionState, useState, useEffect } from "react";
+import { Suspense, useActionState, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { signIn, type AuthResult } from "@/app/actions/auth";
 
@@ -32,6 +36,7 @@ const C = {
 /* ── Email input field ──────────────────────────────────────────────────── */
 function EmailField() {
   const [focused, setFocused] = useState(false);
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
       <label
@@ -83,8 +88,8 @@ function EmailField() {
 
 /* ── Password input field ───────────────────────────────────────────────── */
 function PasswordField() {
-  const [focused,  setFocused]  = useState(false);
-  const [visible,  setVisible]  = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
@@ -130,7 +135,7 @@ function PasswordField() {
             transition: "all 0.2s cubic-bezier(0.16,1,0.3,1)",
           }}
         />
-        {/* Show/hide toggle */}
+        {/* Show / hide password toggle */}
         <button
           type="button"
           onClick={() => setVisible(v => !v)}
@@ -145,7 +150,7 @@ function PasswordField() {
           aria-label={visible ? "Hide password" : "Show password"}
         >
           {visible ? (
-            /* Eye-off */
+            /* Eye-off icon */
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94" />
@@ -153,7 +158,7 @@ function PasswordField() {
               <line x1="1" y1="1" x2="23" y2="23" />
             </svg>
           ) : (
-            /* Eye */
+            /* Eye icon */
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
               stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
@@ -169,6 +174,7 @@ function PasswordField() {
 /* ── Sign-in button with shimmer ────────────────────────────────────────── */
 function SignInButton({ pending }: { pending: boolean }) {
   const [hovered, setHovered] = useState(false);
+
   return (
     <>
       <style>{`
@@ -283,10 +289,10 @@ function AmbientBackground() {
 }
 
 /* ══════════════════════════════════════════════════════════════
-   PAGE
+   LOGIN CONTENT
+   Contains every hook (useSearchParams, useActionState, useEffect,
+   useState) — must stay inside the <Suspense> boundary below.
    ══════════════════════════════════════════════════════════════ */
-import { useActionState, useState, useEffect, Suspense } from "react";
-
 const initialState: AuthResult | null = null;
 
 function LoginContent() {
@@ -295,14 +301,14 @@ function LoginContent() {
 
   const [result, formAction, isPending] = useActionState(
     async (_prev: AuthResult | null, formData: FormData) => {
-      // Inject the `next` redirect target so the server action can use it
+      // Inject the intended destination so the Server Action can redirect back
       formData.set("next", nextPath);
       return await signIn(formData);
     },
     initialState
   );
 
-  // Briefly show a success flash before the server redirect fires
+  // Show a brief success flash while the server redirect is in-flight
   const [showSuccess, setShowSuccess] = useState(false);
   useEffect(() => {
     if (result?.success) setShowSuccess(true);
@@ -337,9 +343,7 @@ function LoginContent() {
         }}>
 
           {/* Logotype above the card */}
-          <div style={{
-            textAlign: "center", marginBottom: 28,
-          }}>
+          <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{
               display: "inline-flex", alignItems: "center", gap: 10,
               marginBottom: 6,
@@ -366,7 +370,7 @@ function LoginContent() {
             </p>
           </div>
 
-          {/* Card */}
+          {/* Glass card */}
           <div style={{
             background: C.bgCard,
             backdropFilter: "blur(22px)",
@@ -408,7 +412,6 @@ function LoginContent() {
                   background: "rgba(244,114,182,0.06)",
                   border: "1px solid rgba(244,114,182,0.22)",
                 }}>
-                  {/* Alert icon */}
                   <svg style={{ flexShrink: 0, marginTop: 1, color: "#f472b6" }}
                     width="14" height="14" viewBox="0 0 24 24" fill="none"
                     stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
@@ -465,9 +468,40 @@ function LoginContent() {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════
+   PAGE — default export
+   A thin Suspense shell.  The fallback matches the page background
+   exactly so there is zero flash of white during the SSR→hydration
+   hand-off.
+   ══════════════════════════════════════════════════════════════ */
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div style={{ minHeight: "100vh", background: "#060b18" }}>Loading...</div>}>
+    <Suspense
+      fallback={
+        <div style={{
+          minHeight: "100vh",
+          background: "#060b18",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+        }}>
+          {/* Subtle cyan spinner so the dark fallback isn't a void */}
+          <svg
+            style={{ animation: "pw-spin 0.9s linear infinite", opacity: 0.35 }}
+            width="28" height="28" viewBox="0 0 24 24"
+            fill="none" stroke="#00e5cc" strokeWidth={2}
+          >
+            <path d="M21 12a9 9 0 11-6.219-8.56" strokeLinecap="round" />
+          </svg>
+          <style>{`
+            @keyframes pw-spin {
+              from { transform: rotate(0deg); }
+              to   { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );
