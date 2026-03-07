@@ -4,33 +4,50 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * middleware.ts  — project root, next to package.json
  *
- * ── What this does ───────────────────────────────────────────────────────────
- * 1. SESSION REFRESH — calls getUser() on every matched request so Supabase
- *    silently rotates an expired access token using the refresh token stored
- *    in cookies.  Without this, tokens expire after 1 h and server components
- *    see null even though the browser has a valid refresh token.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ROOT CAUSE ANALYSIS — ERR_TOO_MANY_REDIRECTS
+ * ══════════════════════════════════════════════════════════════════════════════
  *
- * 2. DASHBOARD GUARD — if no authenticated user and path starts with
- *    /dashboard, redirect to /login (with ?next= so we can return afterwards).
+ * There were two structural bugs that combined to create the loop:
  *
- * 3. LOGIN BYPASS — if the user IS authenticated and hits /login, redirect to
- *    /dashboard/clients/new immediately so they never see the login form.
+ * BUG 1 — Refreshed session cookies were discarded on every redirect.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * When Supabase refreshes an expiring access token, the SDK calls setAll()
+ * to write the new token pair back to the browser.  setAll() writes those
+ * cookies to `supabaseResponse`.
  *
- * ── Why the try/catch is critical ────────────────────────────────────────────
- * Middleware runs in the Vercel Edge Runtime. If either
- *   NEXT_PUBLIC_SUPABASE_URL or NEXT_PUBLIC_SUPABASE_ANON_KEY
- * is undefined (wrong or missing env var), supabase-js throws synchronously
- * with "supabaseUrl is required" before any network call happens.
- * Without a try/catch this becomes MIDDLEWARE_INVOCATION_FAILED (HTTP 500).
- * The catch block falls through so the site stays up; individual pages will
- * still redirect to /login via their own checks.
+ * The previous code returned bare NextResponse.redirect(url) objects for both
+ * the dashboard guard and the login bypass.  These are BRAND NEW responses
+ * with no cookies — the refreshed tokens sitting on `supabaseResponse` were
+ * silently thrown away on every redirect.
  *
- * ── Redirect targets ─────────────────────────────────────────────────────────
- * Authenticated /login      →  /dashboard/clients/new
- *   (NOT /dashboard — that route has no page.tsx and triggers a 404 in layout)
- * Unauthed /dashboard/*     →  /login?next=<original-path>
+ * On the very next request the browser still sent the old, expired token.
+ * Supabase couldn't refresh it again (it was already consumed), getUser()
+ * returned null, and the guard fired again → infinite loop.
+ *
+ * FIX: Before returning any redirect, copy every cookie from `supabaseResponse`
+ * onto the redirect response so the browser always receives updated tokens.
+ *
+ * BUG 2 — MIDDLEWARE_INVOCATION_FAILED when env vars are undefined.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * createServerClient(undefined, undefined) throws "supabaseUrl is required"
+ * synchronously in the Edge Runtime, producing a 500 before any await.
+ * The try/catch prevents this from crashing the site; it falls through and
+ * lets Next.js serve the page normally.  Individual pages still protect routes.
+ *
+ * ── Routing contract (single source of truth) ────────────────────────────────
+ *   Unauthed + /dashboard/*  →  /login?next=<original-path>
+ *   Authed   + /login        →  /dashboard/clients/new
+ *   Everything else          →  pass through unchanged
+ *
+ * ── Why getUser() not getSession() ───────────────────────────────────────────
+ * getSession() reads the local cookie — it can be spoofed or stale.
+ * getUser() makes a server-side call to Supabase and is authoritative.
  */
+
 export async function middleware(request: NextRequest) {
+  // Start with a plain pass-through.  setAll() will replace this with a
+  // response that carries the refreshed cookie headers.
   let supabaseResponse = NextResponse.next({ request });
 
   try {
@@ -43,9 +60,13 @@ export async function middleware(request: NextRequest) {
             return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
+            // 1. Write the new tokens into the ongoing request so the rest of
+            //    this middleware chain sees them.
             cookiesToSet.forEach(({ name, value }) =>
               request.cookies.set(name, value)
             );
+            // 2. Replace supabaseResponse with a fresh one built from the
+            //    updated request, then stamp all the new cookie headers on it.
             supabaseResponse = NextResponse.next({ request });
             cookiesToSet.forEach(({ name, value, options }) =>
               supabaseResponse.cookies.set(name, value, options)
@@ -55,37 +76,66 @@ export async function middleware(request: NextRequest) {
       }
     );
 
-    // Always use getUser() — never getSession() — for authoritative validation.
-    const { data: { user } } = await supabase.auth.getUser();
+    // Authoritative session check.  Never call getSession() in middleware.
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     const { pathname } = request.nextUrl;
 
-    // Guard: unauthenticated user trying to reach any /dashboard route
+    // ── GUARD: block unauthenticated requests to /dashboard/* ────────────────
     if (!user && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
       url.search   = "";
       url.searchParams.set("next", pathname);
-      return NextResponse.redirect(url);
+
+      const redirectResponse = NextResponse.redirect(url);
+
+      // *** THE CRITICAL FIX ***
+      // Copy every cookie from supabaseResponse onto the redirect so that any
+      // tokens Supabase just refreshed reach the browser.  Without this, the
+      // refreshed tokens are lost, the browser resends the expired token on
+      // the next request, getUser() returns null again, and the guard fires
+      // forever — ERR_TOO_MANY_REDIRECTS.
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+      });
+
+      return redirectResponse;
     }
 
-    // Bypass: logged-in user should never see /login
+    // ── BYPASS: send authenticated users away from /login ────────────────────
     if (user && pathname === "/login") {
       const url = request.nextUrl.clone();
       url.pathname = "/dashboard/clients/new";
       url.search   = "";
-      return NextResponse.redirect(url);
+
+      const redirectResponse = NextResponse.redirect(url);
+
+      // Same fix — forward any refreshed cookies onto this redirect too.
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
+      });
+
+      return redirectResponse;
     }
 
   } catch (err) {
-    // Env vars missing / Supabase unreachable — fail open.
-    // The site stays up; page-level guards still protect individual routes.
-    console.error("[middleware] Supabase error, falling through:", err);
+    // Env vars missing or Supabase unreachable.
+    // Fail open: the site stays up.  Page-level guards still protect routes.
+    console.error("[middleware] Supabase error — falling through:", err);
   }
 
+  // Pass through with refreshed session cookies intact.
   return supabaseResponse;
 }
 
+/**
+ * Matcher — run on every path except Next.js internals and static assets.
+ * The broad match is intentional: the session refresh must run on every
+ * HTML request so server components always see a valid, current token.
+ */
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
