@@ -107,47 +107,134 @@ function HowToGuide({ steps }: { steps: string[] }) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   TRADE SLIDER — range input + quick-select pills
-   name="trade_amount_usd" hidden input ensures backend compatibility
+   TRADE SLIDER — range input + editable number input + quick pills
+   
+   State model:
+     `amount`     – the authoritative numeric value (uncapped, any positive number)
+     `inputStr`   – the raw string inside the editable input while the user
+                    is typing (allows intermediate states like "" or "10.")
+   
+   Slider visual range stays 1–100. When amount > 100 the thumb sits at max
+   visually, but the real value is always what the user typed.
+   
+   name="trade_amount_usd" on the hidden input submits the correct value.
    ════════════════════════════════════════════════════════════════ */
 const QUICK_AMOUNTS = [1, 5, 10, 25];
+const SLIDER_MAX    = 100;
 
 function TradeSlider() {
-  const [amount, setAmount] = useState(5);
+  const [amount,   setAmount]   = useState<number>(5);
+  const [inputStr, setInputStr] = useState<string>("5");
+  const [focused,  setFocused]  = useState(false);
 
-  const pct = ((amount - 1) / (100 - 1)) * 100;
+  /* Visual fill % — clamped to slider range so the track never overflows */
+  const sliderVisualVal = Math.min(amount, SLIDER_MAX);
+  const pct = ((sliderVisualVal - 1) / (SLIDER_MAX - 1)) * 100;
+
+  /* Pills set both state values in sync */
+  function pickAmount(v: number) {
+    setAmount(v);
+    setInputStr(String(v));
+  }
+
+  /* Slider drag — always within 1–100, syncs input display */
+  function onSliderChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const v = Number(e.target.value);
+    setAmount(v);
+    setInputStr(String(v));
+  }
+
+  /* User typing into the number input */
+  function onInputChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const raw = e.target.value;
+    setInputStr(raw);                          // always reflect what's typed
+    const parsed = parseFloat(raw);
+    if (!isNaN(parsed) && parsed > 0) {
+      setAmount(parsed);                       // update real value only when valid
+    }
+  }
+
+  /* On blur: clean up empty / invalid string back to last good amount */
+  function onInputBlur() {
+    setFocused(false);
+    const parsed = parseFloat(inputStr);
+    if (isNaN(parsed) || parsed <= 0) {
+      setInputStr(String(amount));             // revert to last known good
+    } else {
+      setInputStr(String(parsed));             // normalize (e.g. "05" → "5")
+      setAmount(parsed);
+    }
+  }
+
+  /* Badge shown when amount exceeds slider range */
+  const isOverCap = amount > SLIDER_MAX;
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
-      {/* Label row */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <label style={{
-          fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
-          textTransform: "uppercase", color: "#4a5a72",
-          fontFamily: "'Syne', sans-serif",
-        }}>
+
+      {/* ── Label + editable value input ── */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+        <label
+          htmlFor="trade-amount-input"
+          style={{
+            fontSize: 11.5, fontWeight: 700, letterSpacing: "0.09em",
+            textTransform: "uppercase", color: "#4a5a72",
+            fontFamily: "'Syne', sans-serif", flexShrink: 0,
+          }}
+        >
           Trade Size per Signal
           <span style={{ color: C.accent, marginLeft: 4, fontWeight: 800 }}>*</span>
         </label>
-        {/* Live value display */}
+
+        {/* Editable number badge */}
         <div style={{
-          display: "flex", alignItems: "baseline", gap: 3,
-          padding: "3px 10px", borderRadius: 7,
-          background: "rgba(0,229,204,0.08)",
-          border: "1px solid rgba(0,229,204,0.20)",
+          position: "relative",
+          display: "flex", alignItems: "center",
+          borderRadius: 9,
+          background: focused ? "rgba(0,229,204,0.07)" : "rgba(0,229,204,0.05)",
+          border: `1px solid ${focused ? "rgba(0,229,204,0.40)" : "rgba(0,229,204,0.20)"}`,
+          boxShadow: focused ? "0 0 14px -4px rgba(0,229,204,0.35)" : "none",
+          transition: "all 0.18s cubic-bezier(0.16,1,0.3,1)",
+          padding: "3px 10px 3px 8px",
+          gap: 2,
         }}>
-          <span style={{
-            fontSize: 18, fontWeight: 800, color: C.accent,
-            fontFamily: "'Syne', sans-serif", lineHeight: 1,
-          }}>
-            ${amount}
-          </span>
-          <span style={{ fontSize: 11, color: "#4a6080", fontWeight: 600 }}>USD</span>
+          <span style={{ fontSize: 14, color: C.accent, fontWeight: 700, lineHeight: 1, marginTop: 1 }}>$</span>
+          <input
+            id="trade-amount-input"
+            type="number"
+            min={1}
+            step="any"
+            value={inputStr}
+            onChange={onInputChange}
+            onFocus={() => setFocused(true)}
+            onBlur={onInputBlur}
+            style={{
+              /* No spinner arrows */
+              MozAppearance: "textfield",
+              background: "transparent",
+              border: "none",
+              outline: "none",
+              color: C.accent,
+              fontSize: 20,
+              fontWeight: 800,
+              fontFamily: "'Syne', sans-serif",
+              lineHeight: 1,
+              width: `${Math.max(2, inputStr.length)}ch`,
+              minWidth: "2ch",
+              maxWidth: "6ch",
+              padding: 0,
+              textAlign: "right",
+            }}
+          />
+          <span style={{ fontSize: 11, color: "#4a6080", fontWeight: 600, marginLeft: 2 }}>USD</span>
         </div>
       </div>
 
-      {/* ── Range slider ── */}
+      {/* Hide browser number-input spinner arrows cross-browser */}
       <style>{`
+        #trade-amount-input::-webkit-outer-spin-button,
+        #trade-amount-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+
         .pw-slider {
           -webkit-appearance: none; appearance: none;
           width: 100%; height: 4px; border-radius: 4px; outline: none; cursor: pointer;
@@ -178,7 +265,6 @@ function TradeSlider() {
           cursor: pointer;
           box-shadow: 0 0 0 3px rgba(0,229,204,0.15);
         }
-        /* Quick-select pill buttons */
         .pw-pill {
           flex: 1; padding: 7px 4px; border-radius: 8px; cursor: pointer;
           font-size: 13px; font-weight: 700; font-family: 'DM Sans', sans-serif;
@@ -200,29 +286,43 @@ function TradeSlider() {
         }
       `}</style>
 
+      {/* ── Range slider (visual 1–100, thumb clamps when over cap) ── */}
       <input
         type="range"
         className="pw-slider"
         min={1}
-        max={100}
+        max={SLIDER_MAX}
         step={1}
-        value={amount}
-        onChange={(e) => setAmount(Number(e.target.value))}
+        value={sliderVisualVal}
+        onChange={onSliderChange}
       />
 
-      {/* Min / max labels */}
+      {/* ── Track labels ── */}
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: -4 }}>
         <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$1</span>
-        <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$100</span>
+        {/* When over cap, show the actual value as a floating callout */}
+        {isOverCap ? (
+          <span style={{
+            fontSize: 10.5, fontWeight: 700,
+            color: C.accentAlt,
+            background: "rgba(124,92,252,0.12)",
+            border: "1px solid rgba(124,92,252,0.25)",
+            borderRadius: 5, padding: "1px 7px",
+          }}>
+            Custom: ${amount.toLocaleString()}
+          </span>
+        ) : (
+          <span style={{ fontSize: 10.5, color: "#3d4d63" }}>$100</span>
+        )}
       </div>
 
-      {/* Quick-select pills */}
+      {/* ── Quick-select pills ── */}
       <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
         {QUICK_AMOUNTS.map((v) => (
           <button
             key={v}
             type="button"
-            onClick={() => setAmount(v)}
+            onClick={() => pickAmount(v)}
             className={`pw-pill${amount === v ? " pw-pill-active" : ""}`}
           >
             ${v}
@@ -231,10 +331,16 @@ function TradeSlider() {
       </div>
 
       <p style={{ fontSize: 11.5, lineHeight: 1.5, color: "#3d4d63" }}>
-        Amount of USDC placed on every copied trade. You can change this anytime.
+        Amount of USDC placed on every copied trade.{" "}
+        {isOverCap
+          ? "Custom amounts above $100 are fully supported."
+          : "Type any amount or drag the slider. You can change this anytime."}
       </p>
 
-      {/* Hidden input — keeps name="trade_amount_usd" for the Server Action */}
+      {/*
+        The hidden input is the single source of truth for the Server Action.
+        `amount` is always the authoritative parsed number — never the raw string.
+      */}
       <input type="hidden" name="trade_amount_usd" value={amount} />
     </div>
   );
