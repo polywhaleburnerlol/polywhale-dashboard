@@ -1,28 +1,23 @@
 /**
- * src/app/page.tsx  — Smart Auth Router
+ * src/app/page.tsx — Auth-aware entry router
  *
- * This is an async Server Component, not a landing page.
- * It runs on every request to "/" and immediately routes the user based
- * on their auth state, eliminating the redirect loop.
+ * This is a pure async Server Component with zero UI.  Every request to "/"
+ * is immediately routed based on the caller's auth state.
  *
- * Flow
- * ────
- *  No session  →  redirect("/login")
- *  Has session →  redirect("/dashboard/clients/new")
+ * ── Why this file exists ─────────────────────────────────────────────────────
+ * The old landing page had <Link href="/dashboard/..."> buttons that sent
+ * unauthenticated visitors straight to guarded routes.  The middleware then
+ * bounced them to /login, the login page bounced back to /dashboard, and the
+ * loop began.  Replacing the landing page with a single auth-check + redirect
+ * eliminates that entry point entirely.
  *
- * Why this stops the loop
- * ───────────────────────
- * The previous page.tsx was a static marketing page with <Link> tags that
- * pointed unauthenticated users straight to /dashboard — which the middleware
- * then redirected back to /login — which (if a stale session cookie existed)
- * redirected back to /dashboard — loop.
+ * ── Route map ────────────────────────────────────────────────────────────────
+ *   No session  →  /login
+ *   Has session →  /dashboard/clients/new
  *
- * Now "/" is the single source of truth for entry routing:
- *   - Unauthenticated:  /  →  /login            (no middleware bounce needed)
- *   - Authenticated:    /  →  /dashboard/clients/new  (straight to the app)
- *
- * The middleware still guards /dashboard/* independently, so even if someone
- * navigates directly to a dashboard URL while logged out they are protected.
+ * Note: the middleware independently guards every /dashboard/* request, so
+ * even if a user bookmarks a dashboard URL and their session has expired they
+ * will be redirected to /login by the middleware, not by this file.
  */
 
 import { redirect } from "next/navigation";

@@ -1,41 +1,50 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { ActiveNavLink } from "@/components/ActiveNavLink";
+import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
 
 /**
- * src/app/dashboard/layout.tsx
+ * src/app/dashboard/layout.tsx — persistent shell for all /dashboard/* routes
  *
- * Persistent shell for every /dashboard/* route.
- * Contains: full-page ambient background, fixed sidebar, sticky top bar,
- * and a scrollable main content slot.
+ * ── What lives here ───────────────────────────────────────────────────────────
+ *   <PolygonMeshBackground />   animated SVG mesh (position:fixed, z-index:0)
+ *   <aside>                     glass sidebar     (z-index:10)
+ *   <header>                    sticky top bar    (z-index:5)
+ *   <main>                      scrollable slot for {children}
  *
- * Background architecture
- * ───────────────────────
- * The outer wrapper is `position: relative; overflow: hidden` so the
- * ambient layers (grid + radial glows) are clipped to the shell and
- * never bleed outside it.  Sidebar (z-index:10) and main column
- * (z-index:1) sit above z-index:0 background layers.
- * This replaces the old per-page <PolygonMeshBackground /> / <AmbientBackground />
- * approach — background now lives here once and is shared by every page.
+ * ── Background architecture ───────────────────────────────────────────────────
+ * PolygonMeshBackground uses position:fixed so it fills the entire viewport
+ * and persists across all client-side navigations without re-mounting.
+ * The outer wrapper uses position:relative to establish a stacking context
+ * for the sidebar and main column z-indexes, but deliberately has NO
+ * overflow:hidden — a fixed element always escapes overflow clipping and
+ * adding it would only create an unintended stacking context.
+ *
+ * ── No security logic here ───────────────────────────────────────────────────
+ * Zero redirect() calls.  Auth is handled exclusively by:
+ *   middleware.ts   — Edge-layer guard on every /dashboard/* request
+ *   src/app/page.tsx — Entry-point router for "/"
+ *
+ * ── Z-index contract ──────────────────────────────────────────────────────────
+ *   0   PolygonMeshBackground  (fixed, behind everything)
+ *   1   Main content column
+ *   5   Sticky top bar
+ *   10  Sidebar
  */
 
-/* ── Design system tokens ───────────────────────────────────────────────── */
+/* ── Design tokens ──────────────────────────────────────────────────────────── */
 const C = {
   bg:            "#060b18",
-  bgCard:        "rgba(12,20,40,0.65)",
-  glass:         "rgba(10,16,32,0.85)",
   accent:        "#00e5cc",
   accentAlt:     "#7c5cfc",
   textPrimary:   "#e2e8f0",
   textSecondary: "#8492a6",
-  border:        "rgba(0,229,204,0.12)",
-  borderHover:   "rgba(0,229,204,0.28)",
 };
 
-/* ── Nav item definitions ───────────────────────────────────────────────── */
+/* ── Nav items ──────────────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
   {
-    href: "/dashboard",
+    href:  "/dashboard",
     label: "Overview",
     exact: true,
     icon: (
@@ -49,7 +58,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/dashboard/clients/new",
+    href:  "/dashboard/clients/new",
     label: "Add Client",
     exact: false,
     icon: (
@@ -63,7 +72,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/dashboard/trades",
+    href:  "/dashboard/trades",
     label: "Trade History",
     exact: false,
     icon: (
@@ -74,7 +83,7 @@ const NAV_ITEMS = [
     ),
   },
   {
-    href: "/dashboard/settings",
+    href:  "/dashboard/settings",
     label: "Settings",
     exact: false,
     icon: (
@@ -99,58 +108,46 @@ const NAV_ITEMS = [
   },
 ];
 
-/* ── Dashboard Layout ───────────────────────────────────────────────────── */
+/* ── Layout component ────────────────────────────────────────────────────────── */
 export default function DashboardLayout({ children }: { children: ReactNode }) {
   return (
     <>
+      {/* ─── Global styles scoped to the dashboard shell ───────────────────── */}
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600;700&display=swap');
 
-        .pw-layout { font-family: 'DM Sans', sans-serif; }
+        .pw-layout       { font-family: 'DM Sans', sans-serif; }
         .pw-font-display { font-family: 'Syne', sans-serif; }
 
-        /* ── Ambient drifting grid ── */
-        @keyframes pw-grid-drift {
-          0%   { transform: translate(0, 0); }
-          100% { transform: translate(48px, 48px); }
-        }
-        .pw-grid-bg {
-          position: absolute; inset: 0; pointer-events: none; z-index: 0;
-          background-image:
-            linear-gradient(rgba(0,229,204,0.022) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(0,229,204,0.022) 1px, transparent 1px);
-          background-size: 60px 60px;
-          animation: pw-grid-drift 26s linear infinite;
-        }
-
-        /* ── Sidebar glass panel ── */
+        /* Glass sidebar */
         .pw-sidebar {
-          position: relative; z-index: 10;
-          background: rgba(10,16,32,0.85);
+          position: relative;
+          z-index: 10;
+          background: rgba(10,16,32,0.88);
           backdrop-filter: blur(20px);
           -webkit-backdrop-filter: blur(20px);
           border-right: 1px solid rgba(0,229,204,0.10);
         }
-        .pw-sidebar ::-webkit-scrollbar { width: 4px; }
+        .pw-sidebar ::-webkit-scrollbar       { width: 4px; }
         .pw-sidebar ::-webkit-scrollbar-track { background: transparent; }
-        .pw-sidebar ::-webkit-scrollbar-thumb {
-          background: rgba(0,229,204,0.15); border-radius: 4px;
-        }
+        .pw-sidebar ::-webkit-scrollbar-thumb { background: rgba(0,229,204,0.15); border-radius: 4px; }
 
-        /* ── Top bar ── */
+        /* Sticky top bar */
         .pw-topbar {
-          background: rgba(6,11,24,0.90);
+          position: sticky;
+          top: 0;
+          z-index: 5;
+          background: rgba(6,11,24,0.92);
           backdrop-filter: blur(16px);
           -webkit-backdrop-filter: blur(16px);
           border-bottom: 1px solid rgba(0,229,204,0.08);
         }
 
-        /* ── Nav link ── */
+        /* Nav link */
         .pw-nav-link {
           display: flex; align-items: center; gap: 11px;
           padding: 10px 12px; border-radius: 10px;
-          font-size: 13.5px; font-weight: 600;
-          color: #8492a6;
+          font-size: 13.5px; font-weight: 600; color: #8492a6;
           border: 1px solid transparent;
           transition: all 0.2s cubic-bezier(0.16,1,0.3,1);
           text-decoration: none; position: relative; overflow: hidden;
@@ -166,6 +163,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-color: rgba(0,229,204,0.20);
           box-shadow: 0 0 20px -6px rgba(0,229,204,0.25);
         }
+        /* Cyan-to-purple left-edge indicator on active link */
         .pw-nav-link[data-active="true"]::before {
           content: '';
           position: absolute; left: 0; top: 20%; bottom: 20%;
@@ -173,16 +171,16 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           background: linear-gradient(180deg, #00e5cc, #7c5cfc);
         }
 
-        /* ── Engine status pulse ── */
+        /* Engine status pulsing dot */
         @keyframes pw-ping {
-          0%   { transform: scale(1); opacity: 0.6; }
-          70%  { transform: scale(2.2); opacity: 0; }
-          100% { transform: scale(2.2); opacity: 0; }
+          0%   { transform: scale(1);   opacity: 0.6; }
+          70%  { transform: scale(2.2); opacity: 0;   }
+          100% { transform: scale(2.2); opacity: 0;   }
         }
         .pw-ping { animation: pw-ping 2s cubic-bezier(0,0,0.2,1) infinite; }
 
-        /* ── Chain badge ── */
-        .pw-badge {
+        /* Purple chain badge */
+        .pw-chain-badge {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 5px 12px; border-radius: 100px;
           background: rgba(124,92,252,0.08);
@@ -191,14 +189,14 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           color: #a78bfa; letter-spacing: 0.01em;
         }
 
-        /* ── Separator ── */
+        /* Gradient separator line */
         .pw-sep {
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(0,229,204,0.12), transparent);
           margin: 8px 12px;
         }
 
-        /* ── Back link ── */
+        /* Sidebar back link */
         .pw-back {
           display: flex; align-items: center; gap: 6px;
           font-size: 12px; font-weight: 500; color: #8492a6;
@@ -208,52 +206,41 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
       `}</style>
 
       {/*
-        Outer shell: position:relative + overflow:hidden
-        — constrains all position:absolute children (grid, glows)
-        to this viewport so they never paint outside the dashboard.
-        min-h-screen ensures it fills the full viewport height.
+        ─── LAYER 0: Animated mesh background ────────────────────────────────
+        position:fixed + z-index:0.  Fills the full viewport, sits behind
+        everything, and survives client-side navigation without re-mounting.
+        Placed BEFORE the flex wrapper so it isn't constrained by flex layout.
+      */}
+      <PolygonMeshBackground />
+
+      {/*
+        ─── Outer flex shell ──────────────────────────────────────────────────
+        position:relative  → establishes the stacking context that gives
+                             z-index meaning to sidebar and main column.
+        background:transparent → lets the fixed mesh show through.
+        NO overflow:hidden  → position:fixed children escape it regardless,
+                              and it would create an unwanted stacking context.
       */}
       <div
-        className="pw-layout flex min-h-screen"
-        style={{ background: C.bg, position: "relative", overflow: "hidden" }}
+        className="pw-layout"
+        style={{
+          display: "flex",
+          minHeight: "100vh",
+          position: "relative",
+          background: "transparent",
+        }}
       >
 
-        {/* ══ LAYER 0: Ambient background (z-index:0) ══════════════════════ */}
-
-        {/* Drifting grid */}
-        <div className="pw-grid-bg" aria-hidden />
-
-        {/* Cyan top-center radial glow */}
-        <div aria-hidden style={{
-          position: "absolute", top: -200, left: "50%",
-          transform: "translateX(-50%)",
-          width: 780, height: 780, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(0,229,204,0.085) 0%, transparent 65%)",
-          pointerEvents: "none", zIndex: 0,
-        }} />
-
-        {/* Purple top-left glow */}
-        <div aria-hidden style={{
-          position: "absolute", top: -280, left: -220,
-          width: 680, height: 680, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(124,92,252,0.075) 0%, transparent 65%)",
-          pointerEvents: "none", zIndex: 0,
-        }} />
-
-        {/* Purple bottom-right glow */}
-        <div aria-hidden style={{
-          position: "absolute", bottom: -240, right: -180,
-          width: 640, height: 640, borderRadius: "50%",
-          background: "radial-gradient(circle, rgba(124,92,252,0.065) 0%, transparent 65%)",
-          pointerEvents: "none", zIndex: 0,
-        }} />
-
-        {/* ══ LAYER 10: Sidebar (z-index:10) ═══════════════════════════════ */}
+        {/* ════════════════════════════════════════════════════════════════
+            SIDEBAR — z-index:10, fixed width, never scrolls
+            ════════════════════════════════════════════════════════════════ */}
         <aside
           className="pw-sidebar"
-          style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
+          style={{
+            width: 236, flexShrink: 0,
+            display: "flex", flexDirection: "column",
+          }}
         >
-
           {/* Logotype */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
@@ -265,7 +252,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
               display: "flex", alignItems: "center", justifyContent: "center",
             }}>
-              <svg width="18" height="18" viewBox="0 0 32 32" fill="#060b18">
+              <svg width="18" height="18" viewBox="0 0 32 32" fill={C.bg}>
                 <path d="M28 14c0-6.627-5.373-12-12-12C9.791 2 7 4 5 7c-1 1.5-1.5 3-1.5 5 0 1.5.3 2.9.8 4.2C3.1 17.5 2 19.6 2 22c0 4.4 3.6 8 8 8h14c3.3 0 6-2.7 6-6 0-1.9-.9-3.6-2.2-4.7.1-.4.2-.9.2-1.3zm-6 4a2 2 0 100-4 2 2 0 000 4z" />
               </svg>
             </div>
@@ -287,11 +274,11 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               <span style={{ position: "relative", display: "flex", width: 9, height: 9, flexShrink: 0 }}>
                 <span className="pw-ping" style={{
                   position: "absolute", inset: 0, borderRadius: "50%",
-                  background: "#00e5cc", opacity: 0.5,
+                  background: C.accent, opacity: 0.5,
                 }} />
                 <span style={{
                   position: "relative", display: "inline-flex",
-                  width: 9, height: 9, borderRadius: "50%", background: "#00e5cc",
+                  width: 9, height: 9, borderRadius: "50%", background: C.accent,
                 }} />
               </span>
               <span className="pw-font-display" style={{
@@ -303,7 +290,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* Nav */}
+          {/* Navigation */}
           <nav style={{ flex: 1, overflowY: "auto", padding: "16px 10px 8px" }}>
             <p style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.10em",
@@ -313,7 +300,7 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               Navigation
             </p>
             <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
-              {NAV_ITEMS.map((item) => (
+              {NAV_ITEMS.map(item => (
                 <li key={item.href}>
                   <ActiveNavLink href={item.href} exact={item.exact} className="pw-nav-link">
                     {item.icon}
@@ -338,20 +325,20 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
               Back to Site
             </Link>
             <p style={{ fontSize: 10.5, lineHeight: 1.6, color: "#3d4d63" }}>
-              AES-256-GCM · Polygon Mainnet
-              <br />Not financial advice.
+              AES-256-GCM · Polygon Mainnet<br />Not financial advice.
             </p>
           </div>
         </aside>
 
-        {/* ══ LAYER 1: Main column (z-index:1) ══════════════════════════════
-            display:flex flex-col so the topbar stays sticky and only
-            <main> scrolls.  overflow:hidden on this column prevents
-            double-scrollbars — only <main> is allowed to scroll.
-        */}
+        {/* ════════════════════════════════════════════════════════════════
+            MAIN COLUMN — z-index:1
+            overflow:hidden on THIS div only prevents horizontal bleed
+            without fighting the fixed mesh background.
+            Only <main> scrolls; the topbar stays sticky at top:0.
+            ════════════════════════════════════════════════════════════════ */}
         <div style={{
-          display: "flex", flexDirection: "column",
           flex: 1, minWidth: 0,
+          display: "flex", flexDirection: "column",
           position: "relative", zIndex: 1,
           overflow: "hidden",
         }}>
@@ -373,10 +360,10 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-              <span className="pw-badge">
+              <span className="pw-chain-badge">
                 <span style={{
                   width: 6, height: 6, borderRadius: "50%",
-                  background: "#7c5cfc", flexShrink: 0,
+                  background: C.accentAlt, flexShrink: 0,
                 }} />
                 Polygon Mainnet
               </span>
@@ -401,13 +388,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          {/* ── Scrollable page slot — children render here ── */}
+          {/* Scrollable page slot — every /dashboard/* page renders here */}
           <main style={{ flex: 1, overflowY: "auto" }}>
             {children}
           </main>
 
-        </div>
-      </div>
+        </div>{/* /main column */}
+      </div>{/* /outer shell */}
     </>
   );
 }
