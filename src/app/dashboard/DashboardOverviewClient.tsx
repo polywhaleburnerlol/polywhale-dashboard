@@ -46,6 +46,7 @@ export type ClientRow = {
   funder_address: string;
   trade_amount_usd: number;
   is_active: boolean;
+  usdc_balance: number;
 };
 
 export type TradeRow = {
@@ -179,7 +180,7 @@ export default function DashboardOverviewClient({
     {
       label: "Total Balance",
       value: fmtUsd(totalBalanceUsd),
-      sub: "USDC",
+      sub: "on-chain USDC",
       change: totalBalanceUsd > 0 ? "Live" : "No wallets",
       up: totalBalanceUsd > 0,
       icon: Wallet,
@@ -581,7 +582,7 @@ export default function DashboardOverviewClient({
                     {w.label || "Unnamed Wallet"}
                   </span>
                   <span style={{ fontSize: 13.5, fontWeight: 700, color: C.accent }}>
-                    {fmtUsd(w.trade_amount_usd)}
+                    {fmtUsd(w.usdc_balance)}
                   </span>
                 </div>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>

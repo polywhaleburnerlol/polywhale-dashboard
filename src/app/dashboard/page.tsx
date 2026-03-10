@@ -1,11 +1,16 @@
 /**
  * src/app/dashboard/page.tsx — Overview (Server Component)
  *
- * ── Confirmed schema ─────────────────────────────────────────────────────────
+ * ── Schema ───────────────────────────────────────────────────────────────────
  * clients:  id | created_at | funder_address | private_key | poly_api_key
- *           poly_secret | poly_passphrase | trade_amount_usd | is_active
+ *           poly_secret | poly_passphrase | trade_amount_usd | is_active | label
  * trades:   id | created_at | client_id | asset_id | market_title | side
  *           price | shares | name | order_id | whale_address
+ *
+ * ── USDC balance ─────────────────────────────────────────────────────────────
+ * Fetched live from Polygon via public RPC for each active wallet.
+ * Both native USDC (0x3c499c...) and bridged USDC.e (0x2791Bc...) are summed.
+ * Falls back to 0 gracefully if the RPC is unreachable.
  */
 
 export const dynamic = "force-dynamic";
@@ -13,6 +18,65 @@ export const dynamic = "force-dynamic";
 import { createSupabaseServerClient } from "../../utils/supabase/server";
 import DashboardOverviewClient from "./DashboardOverviewClient";
 import type { DashboardData } from "./DashboardOverviewClient";
+
+// ── Polygon USDC contract addresses ─────────────────────────────────────────
+const USDC_NATIVE = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // native USDC  (6 decimals)
+const USDC_BRIDGED = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC.e       (6 decimals)
+const POLYGON_RPC = "https://polygon-rpc.com";
+
+/**
+ * Call ERC-20 balanceOf(address) on Polygon via eth_call.
+ * Returns the balance in human-readable USD (already divided by 1e6).
+ * Returns 0 on any error — dashboard stays functional if RPC is down.
+ */
+async function fetchUsdcBalance(
+  tokenAddress: string,
+  walletAddress: string
+): Promise<number> {
+  try {
+    // ABI-encode balanceOf(address): selector + 32-byte padded address
+    const data =
+      "0x70a08231" +
+      "000000000000000000000000" +
+      walletAddress.toLowerCase().replace("0x", "");
+
+    const res = await fetch(POLYGON_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        method: "eth_call",
+        params: [{ to: tokenAddress, data }, "latest"],
+        id: 1,
+      }),
+      // 5-second timeout — don't block the dashboard render
+      signal: AbortSignal.timeout(5000),
+    });
+
+    const json = await res.json();
+    if (!json.result || json.result === "0x") return 0;
+
+    // result is a 32-byte hex string → parse as BigInt → divide by 1e6
+    const raw = BigInt(json.result);
+    return Number(raw) / 1_000_000;
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * Fetch total USDC balance for a wallet (native USDC + USDC.e combined).
+ */
+async function fetchTotalUsdcForWallet(address: string): Promise<number> {
+  if (!address || address.length !== 42) return 0;
+  const [native, bridged] = await Promise.all([
+    fetchUsdcBalance(USDC_NATIVE, address),
+    fetchUsdcBalance(USDC_BRIDGED, address),
+  ]);
+  return native + bridged;
+}
+
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function safeNum(v: unknown): number {
   const n = Number(v);
@@ -22,6 +86,8 @@ function safeNum(v: unknown): number {
 function safeStr(v: unknown, fallback = ""): string {
   return typeof v === "string" && v.length > 0 ? v : fallback;
 }
+
+// ── Page ─────────────────────────────────────────────────────────────────────
 
 export default async function DashboardOverviewPage() {
   const empty: DashboardData = {
@@ -44,12 +110,12 @@ export default async function DashboardOverviewPage() {
   try {
     const { data, error } = await supabase
       .from("clients")
-      .select("id, funder_address, trade_amount_usd, is_active")
+      .select("id, label, funder_address, trade_amount_usd, is_active")
       .eq("is_active", true)
       .order("created_at", { ascending: false });
 
     if (error) {
-      console.error("[dashboard] clients query error:", error.message, error.details, error.hint);
+      console.error("[dashboard] clients query error:", error.message);
     } else {
       rawClients = data ?? [];
     }
@@ -67,7 +133,7 @@ export default async function DashboardOverviewPage() {
       .limit(5);
 
     if (error) {
-      console.error("[dashboard] trades query error:", error.message, error.details, error.hint);
+      console.error("[dashboard] trades query error:", error.message);
     } else {
       rawTrades = data ?? [];
     }
@@ -83,7 +149,7 @@ export default async function DashboardOverviewPage() {
       .select("id", { count: "exact", head: true });
 
     if (error) {
-      console.error("[dashboard] trades count error:", error.message, error.details, error.hint);
+      console.error("[dashboard] trades count error:", error.message);
     } else {
       totalTradeCount = safeNum(count);
     }
@@ -91,13 +157,20 @@ export default async function DashboardOverviewPage() {
     console.error("[dashboard] trades count threw:", err);
   }
 
-  /* ── 4. Assemble safe payload ───────────────────────────────────────────── */
+  /* ── 4. Live USDC balances from Polygon ─────────────────────────────────── */
+  // Fetch all wallets in parallel — max 5s each, fail gracefully.
+  const balances = await Promise.all(
+    rawClients.map((c) => fetchTotalUsdcForWallet(safeStr(c.funder_address)))
+  );
+
+  /* ── 5. Assemble payload ────────────────────────────────────────────────── */
   const clients = rawClients.map((c, i) => ({
     id:               safeStr(c.id, `client-${i}`),
-    label:            `Wallet ${i + 1}`,
+    label:            safeStr(c.label) || `Wallet ${i + 1}`,
     funder_address:   safeStr(c.funder_address),
     trade_amount_usd: safeNum(c.trade_amount_usd),
     is_active:        Boolean(c.is_active),
+    usdc_balance:     balances[i] ?? 0,
   }));
 
   const recentTrades = rawTrades.map((t, i) => ({
@@ -110,7 +183,8 @@ export default async function DashboardOverviewPage() {
     shares:       safeNum(t.shares),
   }));
 
-  const totalBalanceUsd = clients.reduce((s, c) => s + c.trade_amount_usd, 0);
+  // totalBalanceUsd = sum of REAL on-chain USDC across all active wallets
+  const totalBalanceUsd = clients.reduce((s, c) => s + c.usdc_balance, 0);
 
   const payload: DashboardData = {
     clients,
@@ -121,7 +195,7 @@ export default async function DashboardOverviewPage() {
 
   console.log(
     `[dashboard] OK — ${clients.length} clients, ${recentTrades.length} recent trades, ` +
-    `${totalTradeCount} total, $${totalBalanceUsd.toFixed(2)} balance`
+    `${totalTradeCount} total, $${totalBalanceUsd.toFixed(2)} real USDC balance`
   );
 
   return <DashboardOverviewClient data={payload} />;
