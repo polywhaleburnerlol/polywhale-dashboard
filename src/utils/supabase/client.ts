@@ -160,6 +160,7 @@ export async function registerClient(
   }
 
   revalidatePath("/dashboard/clients");
+revalidatePath("/dashboard");
 
   return { success: true, clientId: data.id };
 }
