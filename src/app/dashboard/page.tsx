@@ -1,19 +1,28 @@
 /**
  * src/app/dashboard/page.tsx — Overview (Server Component)
  *
- * Async Server Component. Fetches real data from Supabase, then hands it
- * to <DashboardOverviewClient /> which owns all interactive / recharts UI.
+ * Async Server Component. Fetches real data from Supabase, then passes
+ * serialisable props to <DashboardOverviewClient />.
  *
- * ── Data flow ────────────────────────────────────────────────────────────────
- *   1. Fetch active clients  → wallets panel
- *   2. Fetch 5 most-recent trades → activity feed
- *   3. Count total trades    → KPI card
- *   4. Sum trade_amount_usd across active clients → total-balance KPI
+ * ── Robustness contract ──────────────────────────────────────────────────────
+ *   • Every Supabase query destructures its `error` and logs it explicitly
+ *     so that column mismatches, RLS blocks, and env-var issues surface in
+ *     the Vercel function logs instead of hiding behind a digest hash.
+ *   • If ANY query fails, its result falls back to [] / 0 — the client
+ *     component renders graceful empty states.
+ *   • All values passed to the client are coerced to safe primitives
+ *     (Number(), String()) so a surprise type from Supabase never crashes
+ *     React serialisation.
  *
- * Win Rate and the portfolio chart remain mock — the database doesn't track
- * resolved PnL yet.  When you add an `outcome` / `pnl` column to `trades`,
- * swap those sections for a real query.
+ * ── Schema assumption (clients table) ────────────────────────────────────────
+ *   id  |  funder_address  |  trade_amount_usd  |  is_active
+ *   (NO `label` column — we default that to "Wallet" on the client side.)
+ *
+ * ── Schema assumption (trades table) ─────────────────────────────────────────
+ *   id  |  created_at  |  client_id  |  market_title  |  side  |  price  |  shares
  */
+
+export const dynamic = "force-dynamic";
 
 import { createSupabaseServerClient } from "../../utils/supabase/server";
 import DashboardOverviewClient from "./DashboardOverviewClient";
@@ -24,9 +33,14 @@ import type {
   DashboardData,
 } from "./DashboardOverviewClient";
 
-export const dynamic = "force-dynamic";
+/* ─── Safe numeric coercion ───────────────────────────────────────────────── */
+function safeNum(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
 
 export default async function DashboardOverviewPage() {
+  // Default empty payload — always serialisable, always renders.
   let data: DashboardData = {
     clients: [],
     recentTrades: [],
@@ -37,59 +51,96 @@ export default async function DashboardOverviewPage() {
   try {
     const supabase = await createSupabaseServerClient();
 
-    // ── 1. Active clients (wallets panel + balance KPI) ─────────────────────
-    const { data: clients } = await supabase
+    // ── 1. Active clients ───────────────────────────────────────────────────
+    // NO `label` column — only columns that actually exist in the table.
+    const { data: clients, error: clientsErr } = await supabase
       .from("clients")
-      .select("id, label, funder_address, trade_amount_usd, is_active")
+      .select("id, funder_address, trade_amount_usd, is_active")
       .eq("is_active", true)
-      .order("label", { ascending: true });
+      .order("funder_address", { ascending: true });
 
-    // ── 2. Five most-recent trades (activity feed) ──────────────────────────
-    const { data: trades } = await supabase
+    if (clientsErr) {
+      console.error(
+        "[dashboard/page] clients query failed:",
+        clientsErr.message,
+        clientsErr.details ?? "",
+        clientsErr.hint ?? ""
+      );
+    }
+
+    // ── 2. Five most-recent trades ──────────────────────────────────────────
+    const { data: trades, error: tradesErr } = await supabase
       .from("trades")
       .select("id, created_at, client_id, market_title, side, price, shares")
       .order("created_at", { ascending: false })
       .limit(5);
 
-    // ── 3. Total trade count (KPI) ──────────────────────────────────────────
-    const { count } = await supabase
+    if (tradesErr) {
+      console.error(
+        "[dashboard/page] trades query failed:",
+        tradesErr.message,
+        tradesErr.details ?? "",
+        tradesErr.hint ?? ""
+      );
+    }
+
+    // ── 3. Total trade count ────────────────────────────────────────────────
+    const { count, error: countErr } = await supabase
       .from("trades")
       .select("id", { count: "exact", head: true });
 
-    // ── Assemble ────────────────────────────────────────────────────────────
+    if (countErr) {
+      console.error(
+        "[dashboard/page] trades count failed:",
+        countErr.message,
+        countErr.details ?? "",
+        countErr.hint ?? ""
+      );
+    }
+
+    // ── Assemble: coerce every field to a safe, serialisable primitive ─────
     const safeClients: ClientRow[] = (clients ?? []).map((c) => ({
-      id: c.id,
-      label: c.label ?? "",
-      funder_address: c.funder_address ?? "",
-      trade_amount_usd: c.trade_amount_usd ?? 0,
-      is_active: c.is_active ?? true,
+      id:               String(c.id ?? ""),
+      label:            "Main Wallet",           // no label column in DB
+      funder_address:   String(c.funder_address ?? ""),
+      trade_amount_usd: safeNum(c.trade_amount_usd),
+      is_active:        Boolean(c.is_active),
     }));
 
     const safeTrades: TradeRow[] = (trades ?? []).map((t) => ({
-      id: t.id,
-      created_at: t.created_at,
-      client_id: t.client_id,
-      market_title: t.market_title ?? "Untitled Market",
-      side: t.side ?? "BUY",
-      price: t.price ?? 0,
-      shares: t.shares ?? 0,
+      id:           String(t.id ?? ""),
+      created_at:   String(t.created_at ?? new Date().toISOString()),
+      client_id:    String(t.client_id ?? ""),
+      market_title: String(t.market_title ?? "Untitled Market"),
+      side:         String(t.side ?? "BUY"),
+      price:        safeNum(t.price),
+      shares:       safeNum(t.shares),
     }));
 
     const totalBalance = safeClients.reduce(
-      (sum, c) => sum + (c.trade_amount_usd ?? 0),
+      (sum, c) => sum + c.trade_amount_usd,
       0
     );
 
     data = {
-      clients: safeClients,
-      recentTrades: safeTrades,
-      totalTradeCount: count ?? 0,
+      clients:         safeClients,
+      recentTrades:    safeTrades,
+      totalTradeCount: safeNum(count),
       totalBalanceUsd: totalBalance,
     };
+
+    console.log(
+      `[dashboard/page] OK — ${safeClients.length} clients, ` +
+      `${safeTrades.length} recent trades, ${safeNum(count)} total trades, ` +
+      `$${totalBalance.toFixed(2)} balance`
+    );
   } catch (err) {
-    // Supabase unreachable or env vars missing — render with empty data.
-    // The client component handles the empty state gracefully.
-    console.error("[dashboard/page] Supabase fetch failed:", err);
+    // Network-level failure or env vars missing entirely.
+    console.error(
+      "[dashboard/page] FATAL — outer catch reached:",
+      err instanceof Error ? err.message : String(err)
+    );
+    // `data` stays as the empty default → client renders empty states.
   }
 
   return <DashboardOverviewClient data={data} />;
