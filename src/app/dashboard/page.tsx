@@ -20,48 +20,74 @@ import DashboardOverviewClient from "./DashboardOverviewClient";
 import type { DashboardData } from "./DashboardOverviewClient";
 
 // ── Polygon USDC contract addresses ─────────────────────────────────────────
-const USDC_NATIVE = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // native USDC  (6 decimals)
-const USDC_BRIDGED = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC.e       (6 decimals)
-const POLYGON_RPC = "https://polygon-rpc.com";
+const USDC_NATIVE  = "0x3c499c542cEF5E3811e1192ce70d8cC03d5c3359"; // native USDC (6 decimals)
+const USDC_BRIDGED = "0x2791Bca1f2de4661ED88A30C99A7a9449Aa84174"; // USDC.e      (6 decimals)
+
+// Multiple public RPCs — tried in order until one succeeds
+const POLYGON_RPCS = [
+  "https://rpc.ankr.com/polygon",
+  "https://polygon.llamarpc.com",
+  "https://polygon-bor-rpc.publicnode.com",
+  "https://polygon-rpc.com",
+];
 
 /**
  * Call ERC-20 balanceOf(address) on Polygon via eth_call.
- * Returns the balance in human-readable USD (already divided by 1e6).
- * Returns 0 on any error — dashboard stays functional if RPC is down.
+ * Tries each RPC in POLYGON_RPCS until one returns a valid result.
+ * Returns human-readable USD (divided by 1e6). Returns 0 on all failures.
  */
 async function fetchUsdcBalance(
   tokenAddress: string,
   walletAddress: string
 ): Promise<number> {
-  try {
-    // ABI-encode balanceOf(address): selector + 32-byte padded address
-    const data =
-      "0x70a08231" +
-      "000000000000000000000000" +
-      walletAddress.toLowerCase().replace("0x", "");
+  // ABI-encode balanceOf(address): 4-byte selector + 32-byte padded address
+  const data =
+    "0x70a08231" +
+    "000000000000000000000000" +
+    walletAddress.toLowerCase().replace("0x", "");
 
-    const res = await fetch(POLYGON_RPC, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_call",
-        params: [{ to: tokenAddress, data }, "latest"],
-        id: 1,
-      }),
-      // 5-second timeout — don't block the dashboard render
-      signal: AbortSignal.timeout(5000),
-    });
+  for (const rpc of POLYGON_RPCS) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 6000);
 
-    const json = await res.json();
-    if (!json.result || json.result === "0x") return 0;
+      const res = await fetch(rpc, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          method: "eth_call",
+          params: [{ to: tokenAddress, data }, "latest"],
+          id: 1,
+        }),
+        signal: controller.signal,
+      });
 
-    // result is a 32-byte hex string → parse as BigInt → divide by 1e6
-    const raw = BigInt(json.result);
-    return Number(raw) / 1_000_000;
-  } catch {
-    return 0;
+      clearTimeout(timer);
+
+      const json = await res.json();
+
+      if (json.error) {
+        console.warn(`[usdc] RPC ${rpc} returned error:`, json.error.message);
+        continue;
+      }
+      if (!json.result || json.result === "0x" || json.result === "0x0") {
+        // Valid response but zero balance — stop trying other RPCs
+        return 0;
+      }
+
+      const raw = BigInt(json.result);
+      const balance = Number(raw) / 1_000_000;
+      console.log(`[usdc] ${tokenAddress.slice(0, 8)}… wallet ${walletAddress.slice(0, 8)}… = $${balance.toFixed(2)} via ${rpc}`);
+      return balance;
+    } catch (err) {
+      console.warn(`[usdc] RPC ${rpc} failed:`, err instanceof Error ? err.message : err);
+      // Try next RPC
+    }
   }
+
+  console.error(`[usdc] All RPCs failed for token ${tokenAddress} wallet ${walletAddress}`);
+  return 0;
 }
 
 /**
@@ -73,6 +99,7 @@ async function fetchTotalUsdcForWallet(address: string): Promise<number> {
     fetchUsdcBalance(USDC_NATIVE, address),
     fetchUsdcBalance(USDC_BRIDGED, address),
   ]);
+  console.log(`[usdc] wallet ${address.slice(0, 8)}… total = $${(native + bridged).toFixed(2)} (native=$${native.toFixed(2)} bridged=$${bridged.toFixed(2)})`);
   return native + bridged;
 }
 
