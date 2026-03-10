@@ -160,7 +160,39 @@ export async function registerClient(
   }
 
   revalidatePath("/dashboard/clients");
-revalidatePath("/dashboard");
+  revalidatePath("/dashboard");
 
   return { success: true, clientId: data.id };
+}
+
+// ---------------------------------------------------------------------------
+// removeClient — sets is_active = false (soft delete)
+// ---------------------------------------------------------------------------
+
+export type RemoveResult =
+  | { success: true }
+  | { success: false; error: string };
+
+/**
+ * Soft-deletes a client by setting is_active = false.
+ * The row is kept for audit purposes; the bot checks is_active before trading.
+ */
+export async function removeClient(clientId: string): Promise<RemoveResult> {
+  if (!clientId) return { success: false, error: "Missing client ID." };
+
+  const supabase = getSupabaseAdmin();
+
+  const { error } = await supabase
+    .from("clients")
+    .update({ is_active: false })
+    .eq("id", clientId);
+
+  if (error) {
+    return { success: false, error: `Database error: ${error.message}` };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/dashboard/clients");
+
+  return { success: true };
 }

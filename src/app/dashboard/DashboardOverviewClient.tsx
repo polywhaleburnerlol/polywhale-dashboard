@@ -7,23 +7,15 @@
  * Receives pre-fetched Supabase data from the Server Component (page.tsx).
  *
  * ── What's real vs mock ──────────────────────────────────────────────────────
- *   REAL:   Active wallets (clients), recent trades, total-trade-count KPI,
- *           total balance (sum of active clients' trade_amount_usd).
- *   MOCK:   Win Rate KPI, Portfolio Performance chart.
- *           → Swap these when a `pnl` / `outcome` column exists on `trades`.
+ *   REAL:   Active wallets (clients + on-chain USDC balance), recent trades,
+ *           total-trade-count KPI, total balance (sum of on-chain USDC).
+ *   PENDING: Win Rate, Portfolio Performance chart — requires pnl/outcome
+ *            columns on trades table. Shown as "N/A" until data exists.
  */
 
-import { useMemo } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  Tooltip as RechartsTooltip,
-  ResponsiveContainer,
-  CartesianGrid,
-} from "recharts";
+import { removeClient } from "@/app/actions/client";
 import {
   Wallet,
   TrendingUp,
@@ -34,6 +26,7 @@ import {
   Copy,
   ExternalLink,
   ChevronRight,
+  Trash2,
 } from "lucide-react";
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -118,46 +111,6 @@ function fmtUsd(n: number): string {
   return `$${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/* ─── Mock chart data (PnL tracking not in DB yet) ────────────────────────── */
-
-function generateChartData(finalBalance: number) {
-  const pts: { day: string; value: number }[] = [];
-  // Start ~10% below final balance and trend upward
-  let v = finalBalance * 0.88;
-  const now = new Date();
-  for (let i = 29; i >= 0; i--) {
-    const d = new Date(now);
-    d.setDate(d.getDate() - i);
-    v += (Math.random() - 0.35) * (finalBalance * 0.025);
-    v = Math.max(finalBalance * 0.75, Math.min(finalBalance * 1.15, v));
-    pts.push({
-      day: d.toLocaleDateString("en-US", { month: "short", day: "numeric" }),
-      value: Math.round(v * 100) / 100,
-    });
-  }
-  // Pin final point to actual balance
-  pts[pts.length - 1].value = finalBalance;
-  return pts;
-}
-
-/* ─── Custom recharts tooltip ─────────────────────────────────────────────── */
-function ChartTooltip({ active, payload, label }: any) {
-  if (!active || !payload?.length) return null;
-  return (
-    <div
-      style={{
-        ...glass({ borderRadius: 10, padding: "10px 14px" }),
-        boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
-      }}
-    >
-      <p style={{ fontSize: 11, color: C.textSecondary, marginBottom: 2 }}>{label}</p>
-      <p style={{ fontSize: 15, fontWeight: 700, color: C.accent, fontFamily: "'DM Sans', sans-serif" }}>
-        ${payload[0].value.toLocaleString("en-US", { minimumFractionDigits: 2 })}
-      </p>
-    </div>
-  );
-}
-
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  COMPONENT                                                                */
 /* ═══════════════════════════════════════════════════════════════════════════ */
@@ -167,13 +120,24 @@ export default function DashboardOverviewClient({
 }: {
   data: DashboardData;
 }) {
-  const { clients, recentTrades, totalTradeCount, totalBalanceUsd } = data;
+  const { recentTrades, totalTradeCount, totalBalanceUsd } = data;
+  const [clients, setClients] = useState(data.clients);
+  const [removingId, setRemovingId] = useState<string | null>(null);
+  const [isPending, startTransition] = useTransition();
 
-  // Chart seeded from real balance (or $0 fallback)
-  const chartData = useMemo(
-    () => generateChartData(totalBalanceUsd || 0),
-    [totalBalanceUsd]
-  );
+  async function handleRemove(clientId: string) {
+    if (!confirm("Remove this wallet? The bot will stop trading for it immediately.")) return;
+    setRemovingId(clientId);
+    startTransition(async () => {
+      const result = await removeClient(clientId);
+      if (result.success) {
+        setClients((prev) => prev.filter((c) => c.id !== clientId));
+      } else {
+        alert(`Failed to remove wallet: ${result.error}`);
+      }
+      setRemovingId(null);
+    });
+  }
 
   // ── Build KPI cards ────────────────────────────────────────────────────
   const KPI = [
@@ -187,11 +151,11 @@ export default function DashboardOverviewClient({
       color: C.accent,
     },
     {
-      // Mock — no PnL tracking yet
+      // Real win rate requires outcome/pnl columns on trades — not yet available
       label: "Win Rate",
-      value: totalTradeCount > 0 ? "68.4%" : "—",
-      sub: "Last 30 days",
-      change: totalTradeCount > 0 ? "+2.1%" : "N/A",
+      value: "N/A",
+      sub: "No outcome data yet",
+      change: "Coming soon",
       up: true,
       icon: TrendingUp,
       color: C.green,
@@ -392,95 +356,33 @@ export default function DashboardOverviewClient({
           marginBottom: 20,
         }}
       >
-        {/* ── Chart card (mock — no PnL in DB yet) ───────────────────── */}
-        <div style={glass({ padding: "22px 22px 14px" })}>
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              marginBottom: 18,
-            }}
-          >
+        {/* ── Chart card — pending real PnL data ─────────────────────── */}
+        <div style={glass({ padding: "22px 22px 14px", display: "flex", flexDirection: "column" })}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
             <div>
-              <h2
-                className="pw-font-display"
-                style={{
-                  fontSize: 16,
-                  fontWeight: 700,
-                  color: C.textPrimary,
-                  margin: 0,
-                  letterSpacing: "-0.01em",
-                }}
-              >
+              <h2 className="pw-font-display" style={{ fontSize: 16, fontWeight: 700, color: C.textPrimary, margin: 0, letterSpacing: "-0.01em" }}>
                 Portfolio Performance
               </h2>
               <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 3 }}>
-                30-day balance curve · <span style={{ color: C.textMuted, fontStyle: "italic" }}>simulated</span>
+                30-day P&L curve
               </p>
             </div>
-            <div
-              style={{
-                padding: "5px 12px",
-                borderRadius: 8,
-                fontSize: 11,
-                fontWeight: 600,
-                color: C.green,
-                background: "rgba(52,211,153,0.08)",
-                border: "1px solid rgba(52,211,153,0.15)",
-              }}
-            >
-              +11.8% this month
-            </div>
           </div>
-
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={chartData} margin={{ top: 4, right: 4, left: -18, bottom: 0 }}>
-              <defs>
-                <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={C.accent} stopOpacity={0.3} />
-                  <stop offset="95%" stopColor={C.accent} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid
-                strokeDasharray="3 3"
-                stroke="rgba(255,255,255,0.04)"
-                vertical={false}
-              />
-              <XAxis
-                dataKey="day"
-                tick={{ fill: C.textMuted, fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                interval={4}
-              />
-              <YAxis
-                tick={{ fill: C.textMuted, fontSize: 10 }}
-                axisLine={false}
-                tickLine={false}
-                domain={["dataMin - 100", "dataMax + 100"]}
-                tickFormatter={(v: number) => `$${(v / 1000).toFixed(1)}k`}
-              />
-              <RechartsTooltip
-                content={<ChartTooltip />}
-                cursor={{ stroke: C.accent, strokeWidth: 1, strokeDasharray: "4 4" }}
-              />
-              <Area
-                type="monotone"
-                dataKey="value"
-                stroke={C.accent}
-                strokeWidth={2.2}
-                fill="url(#areaGrad)"
-                dot={false}
-                activeDot={{
-                  r: 5,
-                  fill: C.accent,
-                  stroke: C.bg,
-                  strokeWidth: 2,
-                }}
-              />
-            </AreaChart>
-          </ResponsiveContainer>
+          <div style={{
+            flex: 1, display: "flex", flexDirection: "column",
+            alignItems: "center", justifyContent: "center",
+            gap: 12, padding: "40px 16px",
+            borderRadius: 12, border: `1px dashed ${C.glassBorder}`,
+          }}>
+            <TrendingUp size={32} color={C.textMuted} strokeWidth={1.5} />
+            <p style={{ fontSize: 14, fontWeight: 600, color: C.textMuted, margin: 0 }}>
+              No performance data yet
+            </p>
+            <p style={{ fontSize: 12, color: C.textMuted, textAlign: "center", maxWidth: 280, lineHeight: 1.6 }}>
+              P&L tracking will appear here once your trades have resolved outcomes.
+              This requires an <code style={{ fontFamily: "monospace", color: C.accent, fontSize: 11 }}>outcome</code> column on your trades table.
+            </p>
+          </div>
         </div>
 
         {/* ── Active Wallets card (REAL data from `clients` table) ──── */}
@@ -559,81 +461,67 @@ export default function DashboardOverviewClient({
                 style={{
                   padding: "16px",
                   borderRadius: 12,
-                  background: "rgba(255,255,255,0.02)",
-                  border: "1px solid rgba(255,255,255,0.05)",
-                  transition: "border-color 0.2s",
+                  background: removingId === w.id ? "rgba(248,113,113,0.04)" : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${removingId === w.id ? "rgba(248,113,113,0.20)" : "rgba(255,255,255,0.05)"}`,
+                  transition: "border-color 0.2s, background 0.2s",
+                  opacity: removingId === w.id ? 0.6 : 1,
                 }}
                 onMouseEnter={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = C.glassBorderHover;
+                  if (removingId !== w.id)
+                    (e.currentTarget as HTMLDivElement).style.borderColor = C.glassBorderHover;
                 }}
                 onMouseLeave={(e) => {
-                  (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(255,255,255,0.05)";
+                  if (removingId !== w.id)
+                    (e.currentTarget as HTMLDivElement).style.borderColor = "rgba(255,255,255,0.05)";
                 }}
               >
-                <div
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    marginBottom: 10,
-                  }}
-                >
+                {/* Top row: label + balance + remove */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: C.textPrimary }}>
                     {w.label || "Unnamed Wallet"}
                   </span>
-                  <span style={{ fontSize: 13.5, fontWeight: 700, color: C.accent }}>
-                    {fmtUsd(w.usdc_balance)}
-                  </span>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 13.5, fontWeight: 700, color: C.accent }}>
+                      {fmtUsd(w.usdc_balance)}
+                    </span>
+                    <button
+                      onClick={() => handleRemove(w.id)}
+                      disabled={removingId === w.id}
+                      title="Remove wallet"
+                      style={{
+                        background: "none", border: "none", padding: 3, cursor: "pointer",
+                        color: C.textMuted, transition: "color 0.15s", borderRadius: 6,
+                        display: "flex", alignItems: "center",
+                        opacity: removingId === w.id ? 0.4 : 1,
+                      }}
+                      onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = C.red; }}
+                      onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = C.textMuted; }}
+                    >
+                      <Trash2 size={14} />
+                    </button>
+                  </div>
                 </div>
+                {/* Bottom row: address + copy + polygonscan */}
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <code
-                    style={{
-                      fontSize: 11.5,
-                      color: C.textMuted,
-                      fontFamily: "'Geist Mono', monospace",
-                      letterSpacing: "0.02em",
-                    }}
-                  >
+                  <code style={{ fontSize: 11.5, color: C.textMuted, fontFamily: "'Geist Mono', monospace", letterSpacing: "0.02em" }}>
                     {truncAddr(w.funder_address)}
                   </code>
                   <button
                     onClick={() => navigator.clipboard?.writeText(w.funder_address)}
-                    style={{
-                      background: "none",
-                      border: "none",
-                      padding: 2,
-                      cursor: "pointer",
-                      color: C.textMuted,
-                      transition: "color 0.15s",
-                    }}
+                    style={{ background: "none", border: "none", padding: 2, cursor: "pointer", color: C.textMuted, transition: "color 0.15s" }}
                     title="Copy address"
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.color = C.accent;
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLButtonElement).style.color = C.textMuted;
-                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = C.accent; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = C.textMuted; }}
                   >
                     <Copy size={13} />
                   </button>
                   <a
                     href={`https://polygonscan.com/address/${w.funder_address}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      padding: 2,
-                      color: C.textMuted,
-                      transition: "color 0.15s",
-                    }}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ display: "flex", alignItems: "center", padding: 2, color: C.textMuted, transition: "color 0.15s" }}
                     title="View on Polygonscan"
-                    onMouseEnter={(e) => {
-                      (e.currentTarget as HTMLAnchorElement).style.color = C.accent;
-                    }}
-                    onMouseLeave={(e) => {
-                      (e.currentTarget as HTMLAnchorElement).style.color = C.textMuted;
-                    }}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = C.accent; }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLAnchorElement).style.color = C.textMuted; }}
                   >
                     <ExternalLink size={13} />
                   </a>
