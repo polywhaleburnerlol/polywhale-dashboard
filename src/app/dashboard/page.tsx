@@ -24,6 +24,8 @@ import type {
   DashboardData,
 } from "./DashboardOverviewClient";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardOverviewPage() {
   let data: DashboardData = {
     clients: [],
