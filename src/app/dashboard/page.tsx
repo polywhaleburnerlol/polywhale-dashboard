@@ -1,206 +1,128 @@
 /**
- * src/app/dashboard/page.tsx — DIAGNOSTIC BUILD
+ * src/app/dashboard/page.tsx — Overview (Server Component)
  *
- * This temporary page renders debug information directly on screen
- * so you can see exactly what's failing without needing Vercel logs.
- *
- * REPLACE with the real page once the diagnosis is complete.
+ * ── Confirmed schema ─────────────────────────────────────────────────────────
+ * clients:  id | created_at | funder_address | private_key | poly_api_key
+ *           poly_secret | poly_passphrase | trade_amount_usd | is_active
+ * trades:   id | created_at | client_id | asset_id | market_title | side
+ *           price | shares | name | order_id | whale_address
  */
 
 export const dynamic = "force-dynamic";
 
 import { createSupabaseServerClient } from "../../utils/supabase/server";
+import DashboardOverviewClient from "./DashboardOverviewClient";
+import type { DashboardData } from "./DashboardOverviewClient";
+
+function safeNum(v: unknown): number {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+}
+
+function safeStr(v: unknown, fallback = ""): string {
+  return typeof v === "string" && v.length > 0 ? v : fallback;
+}
 
 export default async function DashboardOverviewPage() {
-  const checks: { step: string; status: string; detail: string }[] = [];
+  const empty: DashboardData = {
+    clients: [],
+    recentTrades: [],
+    totalTradeCount: 0,
+    totalBalanceUsd: 0,
+  };
 
-  /* ── 1. Environment variables ────────────────────────────────────────────── */
-  const hasUrl = !!process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const hasAnon = !!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-
-  checks.push({
-    step: "NEXT_PUBLIC_SUPABASE_URL",
-    status: hasUrl ? "OK" : "MISSING",
-    detail: hasUrl
-      ? process.env.NEXT_PUBLIC_SUPABASE_URL!.slice(0, 30) + "…"
-      : "Not set in environment",
-  });
-
-  checks.push({
-    step: "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-    status: hasAnon ? "OK" : "MISSING",
-    detail: hasAnon ? "Present (hidden)" : "Not set in environment",
-  });
-
-  /* ── 2. Supabase client creation ─────────────────────────────────────────── */
-  let supabase: any = null;
+  let supabase;
   try {
     supabase = await createSupabaseServerClient();
-    checks.push({
-      step: "createSupabaseServerClient()",
-      status: "OK",
-      detail: "Client created successfully",
-    });
-  } catch (err: any) {
-    checks.push({
-      step: "createSupabaseServerClient()",
-      status: "CRASHED",
-      detail: err?.message ?? String(err),
-    });
+  } catch (err) {
+    console.error("[dashboard] createSupabaseServerClient() threw:", err);
+    return <DashboardOverviewClient data={empty} />;
   }
 
-  /* ── 3. Clients query ────────────────────────────────────────────────────── */
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("clients")
-        .select("id, funder_address, trade_amount_usd, is_active")
-        .limit(5);
+  /* ── 1. Active clients ──────────────────────────────────────────────────── */
+  let rawClients: any[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("clients")
+      .select("id, funder_address, trade_amount_usd, is_active")
+      .eq("is_active", true)
+      .order("created_at", { ascending: false });
 
-      if (error) {
-        checks.push({
-          step: "SELECT clients",
-          status: "DB ERROR",
-          detail: `${error.message} | ${error.details ?? ""} | ${error.hint ?? ""}`,
-        });
-      } else {
-        checks.push({
-          step: "SELECT clients",
-          status: "OK",
-          detail: `${(data ?? []).length} rows returned`,
-        });
-      }
-    } catch (err: any) {
-      checks.push({
-        step: "SELECT clients",
-        status: "THREW",
-        detail: err?.message ?? String(err),
-      });
+    if (error) {
+      console.error("[dashboard] clients query error:", error.message, error.details, error.hint);
+    } else {
+      rawClients = data ?? [];
     }
+  } catch (err) {
+    console.error("[dashboard] clients query threw:", err);
   }
 
-  /* ── 4. Trades query ─────────────────────────────────────────────────────── */
-  if (supabase) {
-    try {
-      const { data, error } = await supabase
-        .from("trades")
-        .select("id, created_at, client_id, market_title, side, price, shares")
-        .order("created_at", { ascending: false })
-        .limit(5);
+  /* ── 2. Recent trades ───────────────────────────────────────────────────── */
+  let rawTrades: any[] = [];
+  try {
+    const { data, error } = await supabase
+      .from("trades")
+      .select("id, created_at, client_id, market_title, side, price, shares")
+      .order("created_at", { ascending: false })
+      .limit(5);
 
-      if (error) {
-        checks.push({
-          step: "SELECT trades",
-          status: "DB ERROR",
-          detail: `${error.message} | ${error.details ?? ""} | ${error.hint ?? ""}`,
-        });
-      } else {
-        checks.push({
-          step: "SELECT trades",
-          status: "OK",
-          detail: `${(data ?? []).length} rows returned`,
-        });
-      }
-    } catch (err: any) {
-      checks.push({
-        step: "SELECT trades",
-        status: "THREW",
-        detail: err?.message ?? String(err),
-      });
+    if (error) {
+      console.error("[dashboard] trades query error:", error.message, error.details, error.hint);
+    } else {
+      rawTrades = data ?? [];
     }
+  } catch (err) {
+    console.error("[dashboard] trades query threw:", err);
   }
 
-  /* ── 5. Trades count ─────────────────────────────────────────────────────── */
-  if (supabase) {
-    try {
-      const { count, error } = await supabase
-        .from("trades")
-        .select("id", { count: "exact", head: true });
+  /* ── 3. Trade count ─────────────────────────────────────────────────────── */
+  let totalTradeCount = 0;
+  try {
+    const { count, error } = await supabase
+      .from("trades")
+      .select("id", { count: "exact", head: true });
 
-      if (error) {
-        checks.push({
-          step: "COUNT trades",
-          status: "DB ERROR",
-          detail: `${error.message} | ${error.details ?? ""} | ${error.hint ?? ""}`,
-        });
-      } else {
-        checks.push({
-          step: "COUNT trades",
-          status: "OK",
-          detail: `count = ${count}`,
-        });
-      }
-    } catch (err: any) {
-      checks.push({
-        step: "COUNT trades",
-        status: "THREW",
-        detail: err?.message ?? String(err),
-      });
+    if (error) {
+      console.error("[dashboard] trades count error:", error.message, error.details, error.hint);
+    } else {
+      totalTradeCount = safeNum(count);
     }
+  } catch (err) {
+    console.error("[dashboard] trades count threw:", err);
   }
 
-  /* ── Render results on screen ────────────────────────────────────────────── */
-  const allOk = checks.every((c) => c.status === "OK");
+  /* ── 4. Assemble safe payload ───────────────────────────────────────────── */
+  const clients = rawClients.map((c, i) => ({
+    id:               safeStr(c.id, `client-${i}`),
+    label:            `Wallet ${i + 1}`,
+    funder_address:   safeStr(c.funder_address),
+    trade_amount_usd: safeNum(c.trade_amount_usd),
+    is_active:        Boolean(c.is_active),
+  }));
 
-  return (
-    <div style={{ padding: 40, color: "white", fontFamily: "monospace", maxWidth: 800 }}>
-      <h1 style={{ fontSize: 22, marginBottom: 8, color: allOk ? "#34d399" : "#f87171" }}>
-        Dashboard Diagnostic {allOk ? "— ALL CHECKS PASSED" : "— ISSUES FOUND"}
-      </h1>
-      <p style={{ color: "#8492a6", fontSize: 13, marginBottom: 24 }}>
-        Replace this file with the real page.tsx once all checks pass.
-      </p>
+  const recentTrades = rawTrades.map((t, i) => ({
+    id:           safeStr(t.id, `trade-${i}`),
+    created_at:   safeStr(t.created_at, new Date().toISOString()),
+    client_id:    safeStr(t.client_id),
+    market_title: safeStr(t.market_title, "Untitled Market"),
+    side:         safeStr(t.side, "BUY"),
+    price:        safeNum(t.price),
+    shares:       safeNum(t.shares),
+  }));
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
-        <thead>
-          <tr>
-            {["Step", "Status", "Detail"].map((h) => (
-              <th
-                key={h}
-                style={{
-                  textAlign: "left",
-                  padding: "8px 12px",
-                  fontSize: 11,
-                  color: "#3d4d63",
-                  borderBottom: "1px solid #1a2035",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.05em",
-                }}
-              >
-                {h}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {checks.map((c, i) => (
-            <tr key={i}>
-              <td style={{ padding: "10px 12px", fontSize: 13, color: "#f0f4f8", borderBottom: "1px solid #0d1525" }}>
-                {c.step}
-              </td>
-              <td
-                style={{
-                  padding: "10px 12px",
-                  fontSize: 13,
-                  fontWeight: 700,
-                  borderBottom: "1px solid #0d1525",
-                  color:
-                    c.status === "OK"
-                      ? "#34d399"
-                      : c.status === "MISSING" || c.status === "CRASHED" || c.status === "THREW"
-                      ? "#f87171"
-                      : "#fbbf24",
-                }}
-              >
-                {c.status}
-              </td>
-              <td style={{ padding: "10px 12px", fontSize: 12, color: "#8492a6", borderBottom: "1px solid #0d1525", wordBreak: "break-all" }}>
-                {c.detail}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
+  const totalBalanceUsd = clients.reduce((s, c) => s + c.trade_amount_usd, 0);
+
+  const payload: DashboardData = {
+    clients,
+    recentTrades,
+    totalTradeCount,
+    totalBalanceUsd,
+  };
+
+  console.log(
+    `[dashboard] OK — ${clients.length} clients, ${recentTrades.length} recent trades, ` +
+    `${totalTradeCount} total, $${totalBalanceUsd.toFixed(2)} balance`
   );
+
+  return <DashboardOverviewClient data={payload} />;
 }
