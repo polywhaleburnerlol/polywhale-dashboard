@@ -36,7 +36,11 @@ function getSupabaseAdmin() {
 // ---------------------------------------------------------------------------
 
 export type RegisterClientInput = {
-  /** Display name for this tenant (e.g. "Alice's account") */
+  /**
+   * Display nickname collected from the form — used only in the UI,
+   * NOT persisted to the database (no `label` column in `clients`).
+   * If you later add a `label` column to Supabase, re-enable the insert below.
+   */
   label: string;
   /** Gnosis Safe / proxy wallet that holds USDC — NOT encrypted (not a secret) */
   funder_address: string;
@@ -70,17 +74,22 @@ export type ActionResult =
  *
  * Fields encrypted: private_key, poly_api_key, poly_secret, poly_passphrase
  * Fields stored plaintext: funder_address, trade_amount_usd, is_active
+ *
+ * NOTE: `label` is intentionally excluded from the insert — the `clients`
+ * table has no such column. If you want to persist nicknames, run:
+ *   ALTER TABLE clients ADD COLUMN label TEXT;
+ * and then re-add `label: raw.label` to the insert payload below.
  */
 export async function registerClient(
   formData: FormData
 ): Promise<ActionResult> {
   // ── 1. Parse & basic validation ──────────────────────────────────────────
   const raw: RegisterClientInput = {
-    label: (formData.get("label") as string)?.trim(),
-    funder_address: (formData.get("funder_address") as string)?.trim().toLowerCase(),
-    private_key: (formData.get("private_key") as string)?.trim(),
-    poly_api_key: (formData.get("poly_api_key") as string)?.trim(),
-    poly_secret: (formData.get("poly_secret") as string)?.trim(),
+    label:           (formData.get("label") as string)?.trim(),           // UI only — not inserted
+    funder_address:  (formData.get("funder_address") as string)?.trim().toLowerCase(),
+    private_key:     (formData.get("private_key") as string)?.trim(),
+    poly_api_key:    (formData.get("poly_api_key") as string)?.trim(),
+    poly_secret:     (formData.get("poly_secret") as string)?.trim(),
     poly_passphrase: (formData.get("poly_passphrase") as string)?.trim(),
     trade_amount_usd: parseFloat(formData.get("trade_amount_usd") as string),
   };
@@ -114,13 +123,12 @@ export async function registerClient(
   }
 
   // ── 2. Encrypt sensitive credentials ─────────────────────────────────────
-  // encryptCredentials() throws if ENCRYPTION_SECRET is missing or wrong length.
   let encrypted: ReturnType<typeof encryptCredentials>;
   try {
     encrypted = encryptCredentials({
-      private_key: raw.private_key,
-      poly_api_key: raw.poly_api_key,
-      poly_secret: raw.poly_secret,
+      private_key:     raw.private_key,
+      poly_api_key:    raw.poly_api_key,
+      poly_secret:     raw.poly_secret,
       poly_passphrase: raw.poly_passphrase,
     });
   } catch (err) {
@@ -129,19 +137,20 @@ export async function registerClient(
   }
 
   // ── 3. Insert into Supabase ───────────────────────────────────────────────
+  // `label` is deliberately omitted — no such column exists in `clients`.
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
     .from("clients")
     .insert({
-      funder_address:  raw.funder_address,
+      funder_address:   raw.funder_address,
       trade_amount_usd: raw.trade_amount_usd,
-      is_active:       true,
+      is_active:        true,
       // Encrypted credential columns:
-      private_key:     encrypted.private_key,
-      poly_api_key:    encrypted.poly_api_key,
-      poly_secret:     encrypted.poly_secret,
-      poly_passphrase: encrypted.poly_passphrase,
+      private_key:      encrypted.private_key,
+      poly_api_key:     encrypted.poly_api_key,
+      poly_secret:      encrypted.poly_secret,
+      poly_passphrase:  encrypted.poly_passphrase,
     })
     .select("id")
     .single();
@@ -150,7 +159,6 @@ export async function registerClient(
     return { success: false, error: `Database error: ${error.message}` };
   }
 
-  // Revalidate the clients list page (adjust path to match your routing)
   revalidatePath("/dashboard/clients");
 
   return { success: true, clientId: data.id };
