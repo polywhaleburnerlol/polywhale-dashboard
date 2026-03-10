@@ -1,58 +1,25 @@
 "use server";
 
-/**
- * app/actions/client.ts
- *
- * Server Actions for client (tenant) management.
- *
- * All actions run exclusively on the server — raw credentials submitted from
- * the onboarding form are encrypted here, in memory, before any Supabase write.
- * Plaintext secrets never leave this function scope.
- */
-
 import { createClient } from "@supabase/supabase-js";
 import { encryptCredentials } from "@/lib/encryption";
 import { revalidatePath } from "next/cache";
 
-// ---------------------------------------------------------------------------
-// Supabase admin client (service-role key — server-only)
-// ---------------------------------------------------------------------------
-
 function getSupabaseAdmin() {
   const url = process.env.SUPABASE_URL;
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_KEY;
-
   if (!url || !key) {
-    throw new Error(
-      "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set in environment variables."
-    );
+    throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY must be set.");
   }
-
   return createClient(url, key);
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export type RegisterClientInput = {
-  /**
-   * Display nickname collected from the form — used only in the UI,
-   * NOT persisted to the database (no `label` column in `clients`).
-   * If you later add a `label` column to Supabase, re-enable the insert below.
-   */
   label: string;
-  /** Gnosis Safe / proxy wallet that holds USDC — NOT encrypted (not a secret) */
   funder_address: string;
-  /** EOA private key — will be encrypted before storage */
   private_key: string;
-  /** Polymarket CLOB API key — will be encrypted before storage */
   poly_api_key: string;
-  /** Polymarket CLOB API secret — will be encrypted before storage */
   poly_secret: string;
-  /** Polymarket CLOB API passphrase — will be encrypted before storage */
   poly_passphrase: string;
-  /** Per-trade BUY size in USD (e.g. 5.00) */
   trade_amount_usd: number;
 };
 
@@ -60,46 +27,23 @@ export type ActionResult =
   | { success: true; clientId: string }
   | { success: false; error: string };
 
-// ---------------------------------------------------------------------------
-// registerClient — called directly from the onboarding form's action prop
-// ---------------------------------------------------------------------------
+export type RemoveResult =
+  | { success: true }
+  | { success: false; error: string };
 
-/**
- * Validates, encrypts, and inserts a new bot client into the Supabase
- * `clients` table.
- *
- * Encryption contract (matches bot's EncryptionService):
- *   - AES-256-GCM, 12-byte IV, format: iv:tag:encrypted (all hex, colon-delimited)
- *   - Key: ENCRYPTION_SECRET (must be exactly 32 UTF-8 bytes)
- *
- * Fields encrypted: private_key, poly_api_key, poly_secret, poly_passphrase
- * Fields stored plaintext: funder_address, trade_amount_usd, is_active
- *
- * NOTE: `label` is intentionally excluded from the insert — the `clients`
- * table has no such column. If you want to persist nicknames, run:
- *   ALTER TABLE clients ADD COLUMN label TEXT;
- * and then re-add `label: raw.label` to the insert payload below.
- */
-export async function registerClient(
-  formData: FormData
-): Promise<ActionResult> {
-  // ── 1. Parse & basic validation ──────────────────────────────────────────
+export async function registerClient(formData: FormData): Promise<ActionResult> {
   const raw: RegisterClientInput = {
-    label:           (formData.get("label") as string)?.trim(),           // UI only — not inserted
-    funder_address:  (formData.get("funder_address") as string)?.trim().toLowerCase(),
-    private_key:     (formData.get("private_key") as string)?.trim(),
-    poly_api_key:    (formData.get("poly_api_key") as string)?.trim(),
-    poly_secret:     (formData.get("poly_secret") as string)?.trim(),
-    poly_passphrase: (formData.get("poly_passphrase") as string)?.trim(),
+    label:            (formData.get("label") as string)?.trim(),
+    funder_address:   (formData.get("funder_address") as string)?.trim().toLowerCase(),
+    private_key:      (formData.get("private_key") as string)?.trim(),
+    poly_api_key:     (formData.get("poly_api_key") as string)?.trim(),
+    poly_secret:      (formData.get("poly_secret") as string)?.trim(),
+    poly_passphrase:  (formData.get("poly_passphrase") as string)?.trim(),
     trade_amount_usd: parseFloat(formData.get("trade_amount_usd") as string),
   };
 
   const requiredFields: (keyof RegisterClientInput)[] = [
-    "funder_address",
-    "private_key",
-    "poly_api_key",
-    "poly_secret",
-    "poly_passphrase",
+    "funder_address", "private_key", "poly_api_key", "poly_secret", "poly_passphrase",
   ];
 
   for (const field of requiredFields) {
@@ -109,20 +53,13 @@ export async function registerClient(
   }
 
   if (!raw.funder_address.startsWith("0x") || raw.funder_address.length !== 42) {
-    return {
-      success: false,
-      error: "Funder address must be a valid 42-character Ethereum address (0x…).",
-    };
+    return { success: false, error: "Funder address must be a valid 42-character Ethereum address (0x...)." };
   }
 
   if (isNaN(raw.trade_amount_usd) || raw.trade_amount_usd <= 0) {
-    return {
-      success: false,
-      error: "Trade amount must be a positive number.",
-    };
+    return { success: false, error: "Trade amount must be a positive number." };
   }
 
-  // ── 2. Encrypt sensitive credentials ─────────────────────────────────────
   let encrypted: ReturnType<typeof encryptCredentials>;
   try {
     encrypted = encryptCredentials({
@@ -136,8 +73,6 @@ export async function registerClient(
     return { success: false, error: `Encryption failed: ${message}` };
   }
 
-  // ── 3. Insert into Supabase ───────────────────────────────────────────────
-  // `label` is deliberately omitted — no such column exists in `clients`.
   const supabase = getSupabaseAdmin();
 
   const { data, error } = await supabase
@@ -146,7 +81,6 @@ export async function registerClient(
       funder_address:   raw.funder_address,
       trade_amount_usd: raw.trade_amount_usd,
       is_active:        true,
-      // Encrypted credential columns:
       private_key:      encrypted.private_key,
       poly_api_key:     encrypted.poly_api_key,
       poly_secret:      encrypted.poly_secret,
@@ -165,18 +99,6 @@ export async function registerClient(
   return { success: true, clientId: data.id };
 }
 
-// ---------------------------------------------------------------------------
-// removeClient — sets is_active = false (soft delete)
-// ---------------------------------------------------------------------------
-
-export type RemoveResult =
-  | { success: true }
-  | { success: false; error: string };
-
-/**
- * Soft-deletes a client by setting is_active = false.
- * The row is kept for audit purposes; the bot checks is_active before trading.
- */
 export async function removeClient(clientId: string): Promise<RemoveResult> {
   if (!clientId) return { success: false, error: "Missing client ID." };
 
