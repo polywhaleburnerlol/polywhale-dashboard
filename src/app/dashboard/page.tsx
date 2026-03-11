@@ -27,7 +27,7 @@ async function fetchUsdcBalance(tokenAddress: string, walletAddress: string): Pr
   for (const rpc of POLYGON_RPCS) {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 6000);
+      const timer = setTimeout(() => controller.abort(), 2500);
       const res = await fetch(rpc, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
