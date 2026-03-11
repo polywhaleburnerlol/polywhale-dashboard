@@ -75,6 +75,8 @@ export default async function DashboardOverviewPage() {
     recentTrades: [],
     totalTradeCount: 0,
     totalBalanceUsd: 0,
+    totalInvestedUsd: 0,
+    chartPoints: [],
   };
 
   let supabase;
