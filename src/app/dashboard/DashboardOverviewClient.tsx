@@ -49,7 +49,7 @@ export type TradeRow = {
   market_title: string;
   side: string;          // "BUY" | "SELL"
   price: number;
-  shares: number;
+  shares: number | null;
 };
 
 export type ChartPoint = {
