@@ -47,11 +47,15 @@ export type TradeRow = {
   created_at: string;
   client_id: string;
   market_title: string;
-  outcome: string;       // "Yes" | "No" — the actual outcome traded
   side: string;          // "BUY" | "SELL"
   price: number;
-  shares: number | null; // null for BUY orders (bot stores shares only for SELL)
-  trade_amount_usd: number; // USD spent (for BUY orders)
+  shares: number;
+};
+
+export type ChartPoint = {
+  date: string;        // "MMM D" e.g. "Mar 7"
+  cumulative: number;  // cumulative USD invested up to this date
+  daily: number;       // USD invested on this date
 };
 
 export type DashboardData = {
@@ -59,6 +63,8 @@ export type DashboardData = {
   recentTrades: TradeRow[];
   totalTradeCount: number;
   totalBalanceUsd: number;
+  totalInvestedUsd: number;  // sum of all BUY trade costs
+  chartPoints: ChartPoint[]; // for the portfolio chart
 };
 
 /* ─── Design tokens (mirrored from dashboard/layout.tsx) ──────────────────── */
@@ -117,6 +123,143 @@ function fmtUsd(n: number): string {
 /*  COMPONENT                                                                */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+/*  INVESTMENT CHART — pure SVG, no external deps                            */
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+function InvestmentChart({ points }: { points: ChartPoint[] }) {
+  if (!points || points.length === 0) {
+    return (
+      <div style={{
+        flex: 1, display: "flex", flexDirection: "column",
+        alignItems: "center", justifyContent: "center",
+        gap: 10, padding: "32px 16px",
+        borderRadius: 12, border: `1px dashed rgba(0,229,204,0.10)`,
+        minHeight: 160,
+      }}>
+        <TrendingUp size={28} color="#3d4d63" strokeWidth={1.5} />
+        <p style={{ fontSize: 13, fontWeight: 600, color: "#3d4d63", margin: 0 }}>
+          No trades yet
+        </p>
+        <p style={{ fontSize: 12, color: "#3d4d63", textAlign: "center", lineHeight: 1.5 }}>
+          This chart will update automatically once the engine executes its first trade.
+        </p>
+      </div>
+    );
+  }
+
+  const W = 600, H = 160, PAD_L = 48, PAD_R = 16, PAD_T = 12, PAD_B = 32;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const maxVal = Math.max(...points.map(p => p.cumulative), 1);
+  const n = points.length;
+
+  // Build polyline points
+  const pts = points.map((p, i) => {
+    const x = PAD_L + (n === 1 ? plotW / 2 : (i / (n - 1)) * plotW);
+    const y = PAD_T + plotH - (p.cumulative / maxVal) * plotH;
+    return { x, y, ...p };
+  });
+
+  const polyline = pts.map(p => `${p.x},${p.y}`).join(" ");
+
+  // Area fill path
+  const areaPath = [
+    `M ${pts[0].x} ${PAD_T + plotH}`,
+    ...pts.map(p => `L ${p.x} ${p.y}`),
+    `L ${pts[pts.length - 1].x} ${PAD_T + plotH}`,
+    "Z",
+  ].join(" ");
+
+  // Y-axis labels (0, mid, max)
+  const yLabels = [
+    { val: 0,           y: PAD_T + plotH },
+    { val: maxVal / 2,  y: PAD_T + plotH / 2 },
+    { val: maxVal,      y: PAD_T },
+  ];
+
+  // X-axis: show first, middle, last labels
+  const xLabels = n <= 1
+    ? pts
+    : [pts[0], pts[Math.floor((n - 1) / 2)], pts[n - 1]];
+
+  return (
+    <div style={{ flex: 1, minHeight: 160, position: "relative" }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        height="100%"
+        style={{ overflow: "visible", display: "block" }}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <linearGradient id="investGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%"   stopColor="#00e5cc" stopOpacity="0.18" />
+            <stop offset="100%" stopColor="#00e5cc" stopOpacity="0"    />
+          </linearGradient>
+          <linearGradient id="lineGrad" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%"   stopColor="#7c5cfc" />
+            <stop offset="100%" stopColor="#00e5cc" />
+          </linearGradient>
+        </defs>
+
+        {/* Grid lines */}
+        {yLabels.map((l, i) => (
+          <line key={i}
+            x1={PAD_L} y1={l.y} x2={W - PAD_R} y2={l.y}
+            stroke="rgba(255,255,255,0.04)" strokeWidth="1"
+          />
+        ))}
+
+        {/* Y-axis labels */}
+        {yLabels.map((l, i) => (
+          <text key={i}
+            x={PAD_L - 6} y={l.y + 4}
+            textAnchor="end"
+            fontSize="9" fill="#3d4d63" fontFamily="monospace"
+          >
+            ${l.val >= 1000 ? (l.val / 1000).toFixed(1) + "k" : l.val.toFixed(0)}
+          </text>
+        ))}
+
+        {/* Area fill */}
+        <path d={areaPath} fill="url(#investGrad)" />
+
+        {/* Line */}
+        <polyline
+          points={polyline}
+          fill="none"
+          stroke="url(#lineGrad)"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {/* Data points */}
+        {pts.map((p, i) => (
+          <circle key={i}
+            cx={p.x} cy={p.y} r="3"
+            fill="#060b18" stroke="#00e5cc" strokeWidth="1.5"
+          />
+        ))}
+
+        {/* X-axis labels */}
+        {xLabels.map((p, i) => (
+          <text key={i}
+            x={p.x} y={H - 4}
+            textAnchor="middle"
+            fontSize="9" fill="#3d4d63" fontFamily="sans-serif"
+          >
+            {p.date}
+          </text>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
 export default function DashboardOverviewClient({
   data,
 }: {
@@ -153,12 +296,11 @@ export default function DashboardOverviewClient({
       color: C.accent,
     },
     {
-      // Real win rate requires outcome/pnl columns on trades — not yet available
-      label: "Win Rate",
-      value: "N/A",
-      sub: "No outcome data yet",
-      change: "Coming soon",
-      up: true,
+      label: "Total Invested",
+      value: fmtUsd(data.totalInvestedUsd),
+      sub: "cumulative BUY spend",
+      change: totalTradeCount > 0 ? `across ${totalTradeCount} trade${totalTradeCount === 1 ? "" : "s"}` : "No trades yet",
+      up: data.totalInvestedUsd > 0,
       icon: TrendingUp,
       color: C.green,
     },
@@ -186,28 +328,19 @@ export default function DashboardOverviewClient({
   // ── Derive trade rows for the table ────────────────────────────────────
   const tradeRows = recentTrades.map((t) => {
     const isBuy = t.side.toUpperCase() === "BUY";
-    // outcome from DB e.g. "Yes" or "No" — fall back to "?" if missing
-    const outcome = t.outcome || "?";
-    const action = isBuy ? `Bought ${outcome}` : `Sold ${outcome}`;
-    // For BUY: cost = trade_amount_usd (what was actually spent).
-    // For SELL: cost = shares × price.
-    const cost = isBuy
-      ? t.trade_amount_usd
-      : (t.shares ?? 0) * t.price;
-    // Shares: stored for SELL, derived for BUY (approx = cost / price)
-    const sharesDisplay = t.shares != null
-      ? t.shares
-      : t.price > 0 ? +(t.trade_amount_usd / t.price).toFixed(2) : 0;
+    const cost = t.price * t.shares;
     return {
       id: t.id,
       market: t.market_title,
-      action,
+      action: isBuy ? "Bought YES" : "Sold NO",
       amount: fmtUsd(cost),
+      // No resolved/active status in DB yet — show "Active" for all
       status: "Active" as const,
-      pnl: fmtUsd(cost),
+      // No PnL column yet — show cost as placeholder
+      pnl: `${fmtUsd(cost)}`,
       pnlUp: isBuy,
       time: timeAgo(t.created_at),
-      shares: sharesDisplay,
+      shares: t.shares,
       price: t.price,
     };
   });
@@ -367,33 +500,25 @@ export default function DashboardOverviewClient({
           marginBottom: 20,
         }}
       >
-        {/* ── Chart card — pending real PnL data ─────────────────────── */}
+        {/* ── Investment Activity chart (real data) ───────────────────── */}
         <div style={glass({ padding: "22px 22px 14px", display: "flex", flexDirection: "column" })}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
             <div>
               <h2 className="pw-font-display" style={{ fontSize: 16, fontWeight: 700, color: C.textPrimary, margin: 0, letterSpacing: "-0.01em" }}>
-                Portfolio Performance
+                Investment Activity
               </h2>
               <p style={{ fontSize: 12, color: C.textSecondary, marginTop: 3 }}>
-                30-day P&L curve
+                Cumulative USD deployed · last 30 days
               </p>
             </div>
+            <div style={{ textAlign: "right" }}>
+              <span style={{ fontSize: 20, fontWeight: 800, color: C.accent, letterSpacing: "-0.02em" }}>
+                {fmtUsd(data.totalInvestedUsd)}
+              </span>
+              <p style={{ fontSize: 11, color: C.textSecondary, margin: "2px 0 0" }}>total deployed</p>
+            </div>
           </div>
-          <div style={{
-            flex: 1, display: "flex", flexDirection: "column",
-            alignItems: "center", justifyContent: "center",
-            gap: 12, padding: "40px 16px",
-            borderRadius: 12, border: `1px dashed ${C.glassBorder}`,
-          }}>
-            <TrendingUp size={32} color={C.textMuted} strokeWidth={1.5} />
-            <p style={{ fontSize: 14, fontWeight: 600, color: C.textMuted, margin: 0 }}>
-              No performance data yet
-            </p>
-            <p style={{ fontSize: 12, color: C.textMuted, textAlign: "center", maxWidth: 280, lineHeight: 1.6 }}>
-              P&L tracking will appear here once your trades have resolved outcomes.
-              This requires an <code style={{ fontFamily: "monospace", color: C.accent, fontSize: 11 }}>outcome</code> column on your trades table.
-            </p>
-          </div>
+          <InvestmentChart points={data.chartPoints} />
         </div>
 
         {/* ── Active Wallets card (REAL data from `clients` table) ──── */}
@@ -718,7 +843,7 @@ export default function DashboardOverviewClient({
                         padding: "14px 14px 14px 0",
                         fontSize: 12.5,
                         fontWeight: 600,
-                        color: t.action.includes("Yes") ? C.green : C.red,
+                        color: t.action.includes("YES") ? C.green : C.red,
                         borderBottom: "1px solid rgba(255,255,255,0.03)",
                         whiteSpace: "nowrap",
                       }}

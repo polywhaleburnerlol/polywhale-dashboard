@@ -106,17 +106,29 @@ export default async function DashboardOverviewPage() {
     clientTradeAmount[c.id] = safeNum(c.trade_amount_usd);
   }
 
-  /* ── 2. Recent trades — now includes outcome ────────────────────────────── */
+  /* ── 2. Recent trades (display) + all trades (chart) ───────────────────── */
   let rawTrades: any[] = [];
+  let allTrades: any[] = [];
   try {
-    const { data, error } = await supabase
+    // Last 5 for the recent activity table
+    const { data: recent, error: e1 } = await supabase
       .from("trades")
       .select("id, created_at, client_id, market_title, side, price, shares, outcome")
       .order("created_at", { ascending: false })
       .limit(5);
+    if (e1) console.error("[dashboard] trades query error:", e1.message);
+    else rawTrades = recent ?? [];
 
-    if (error) console.error("[dashboard] trades query error:", error.message);
-    else rawTrades = data ?? [];
+    // All BUY trades in last 30 days for the investment chart
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: all, error: e2 } = await supabase
+      .from("trades")
+      .select("created_at, side, client_id")
+      .eq("side", "BUY")
+      .gte("created_at", since)
+      .order("created_at", { ascending: true });
+    if (e2) console.error("[dashboard] chart trades query error:", e2.message);
+    else allTrades = all ?? [];
   } catch (err) {
     console.error("[dashboard] trades query threw:", err);
   }
@@ -171,9 +183,29 @@ export default async function DashboardOverviewPage() {
 
   const totalBalanceUsd = clients.reduce((s, c) => s + c.usdc_balance, 0);
 
+  /* ── 6. Compute chart points + total invested ───────────────────────────── */
+  // Group BUY trades by calendar date, using each client's trade_amount_usd
+  const dailySpend: Record<string, number> = {};
+  for (const t of allTrades) {
+    const day = t.created_at.slice(0, 10); // "YYYY-MM-DD"
+    const amt = clientTradeAmount[t.client_id] ?? safeNum(null);
+    dailySpend[day] = (dailySpend[day] ?? 0) + amt;
+  }
+
+  const sortedDays = Object.keys(dailySpend).sort();
+  let cum = 0;
+  const chartPoints = sortedDays.map((day) => {
+    cum += dailySpend[day];
+    const d = new Date(day + "T12:00:00Z");
+    const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    return { date, cumulative: cum, daily: dailySpend[day] };
+  });
+
+  const totalInvestedUsd = cum; // final cumulative value
+
   return (
     <DashboardOverviewClient
-      data={{ clients, recentTrades, totalTradeCount, totalBalanceUsd }}
+      data={{ clients, recentTrades, totalTradeCount, totalBalanceUsd, totalInvestedUsd, chartPoints }}
     />
   );
 }
