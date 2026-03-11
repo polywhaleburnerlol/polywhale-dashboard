@@ -47,9 +47,11 @@ export type TradeRow = {
   created_at: string;
   client_id: string;
   market_title: string;
+  outcome: string;       // "Yes" | "No" — the actual outcome traded
   side: string;          // "BUY" | "SELL"
   price: number;
-  shares: number;
+  shares: number | null; // null for BUY orders (bot stores shares only for SELL)
+  trade_amount_usd: number; // USD spent (for BUY orders)
 };
 
 export type DashboardData = {
@@ -184,19 +186,28 @@ export default function DashboardOverviewClient({
   // ── Derive trade rows for the table ────────────────────────────────────
   const tradeRows = recentTrades.map((t) => {
     const isBuy = t.side.toUpperCase() === "BUY";
-    const cost = t.price * t.shares;
+    // outcome from DB e.g. "Yes" or "No" — fall back to "?" if missing
+    const outcome = t.outcome || "?";
+    const action = isBuy ? `Bought ${outcome}` : `Sold ${outcome}`;
+    // For BUY: cost = trade_amount_usd (what was actually spent).
+    // For SELL: cost = shares × price.
+    const cost = isBuy
+      ? t.trade_amount_usd
+      : (t.shares ?? 0) * t.price;
+    // Shares: stored for SELL, derived for BUY (approx = cost / price)
+    const sharesDisplay = t.shares != null
+      ? t.shares
+      : t.price > 0 ? +(t.trade_amount_usd / t.price).toFixed(2) : 0;
     return {
       id: t.id,
       market: t.market_title,
-      action: isBuy ? "Bought YES" : "Sold NO",
+      action,
       amount: fmtUsd(cost),
-      // No resolved/active status in DB yet — show "Active" for all
       status: "Active" as const,
-      // No PnL column yet — show cost as placeholder
-      pnl: `${fmtUsd(cost)}`,
+      pnl: fmtUsd(cost),
       pnlUp: isBuy,
       time: timeAgo(t.created_at),
-      shares: t.shares,
+      shares: sharesDisplay,
       price: t.price,
     };
   });
@@ -707,7 +718,7 @@ export default function DashboardOverviewClient({
                         padding: "14px 14px 14px 0",
                         fontSize: 12.5,
                         fontWeight: 600,
-                        color: t.action.includes("YES") ? C.green : C.red,
+                        color: t.action.includes("Yes") ? C.green : C.red,
                         borderBottom: "1px solid rgba(255,255,255,0.03)",
                         whiteSpace: "nowrap",
                       }}
