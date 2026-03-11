@@ -47,9 +47,11 @@ export type TradeRow = {
   created_at: string;
   client_id: string;
   market_title: string;
-  side: string;          // "BUY" | "SELL"
+  outcome: string;
+  side: string;
   price: number;
   shares: number | null;
+  trade_amount_usd: number;
 };
 
 export type ChartPoint = {
@@ -328,19 +330,24 @@ export default function DashboardOverviewClient({
   // ── Derive trade rows for the table ────────────────────────────────────
   const tradeRows = recentTrades.map((t) => {
     const isBuy = t.side.toUpperCase() === "BUY";
-    const cost = t.price * t.shares;
+    const outcome = t.outcome || "?";
+    const action = isBuy ? `Bought ${outcome}` : `Sold ${outcome}`;
+    const cost = isBuy
+      ? t.trade_amount_usd
+      : (t.shares ?? 0) * t.price;
+    const sharesDisplay = t.shares != null
+      ? t.shares
+      : t.price > 0 ? +(t.trade_amount_usd / t.price).toFixed(2) : 0;
     return {
       id: t.id,
       market: t.market_title,
-      action: isBuy ? "Bought YES" : "Sold NO",
+      action,
       amount: fmtUsd(cost),
-      // No resolved/active status in DB yet — show "Active" for all
       status: "Active" as const,
-      // No PnL column yet — show cost as placeholder
-      pnl: `${fmtUsd(cost)}`,
+      pnl: fmtUsd(cost),
       pnlUp: isBuy,
       time: timeAgo(t.created_at),
-      shares: t.shares,
+      shares: sharesDisplay,
       price: t.price,
     };
   });
