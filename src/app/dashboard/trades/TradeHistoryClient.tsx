@@ -312,7 +312,7 @@ function WalletDropdown({
       {open && (
         <div style={{
           position: "absolute", top: "calc(100% + 6px)", left: 0,
-          minWidth: 160, zIndex: 50,
+          minWidth: 160, zIndex: 9999,
           background: "rgba(8,14,30,0.98)",
           backdropFilter: "blur(20px)",
           WebkitBackdropFilter: "blur(20px)",
@@ -667,6 +667,7 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
         animationDelay: "0.10s",
         marginBottom: 16,
         display: "flex", flexWrap: "wrap", alignItems: "center", gap: 12,
+        overflow: "visible",
       }}>
         {/* Search */}
         <div style={{
