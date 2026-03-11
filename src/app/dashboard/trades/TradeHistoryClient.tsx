@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
   Activity, TrendingUp, BarChart3, Target,
   ArrowUpRight, ArrowDownRight, Copy, Check,
@@ -256,6 +256,110 @@ type SortKey =
 type SortDir = "asc" | "desc";
 
 const ROWS_PER_PAGE = 25;
+
+/* ══════════════════════════════════════════════════════════════════════════ */
+/*  WALLET DROPDOWN — custom, matches glass design system                     */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+function WalletDropdown({
+  clients, value, onChange,
+}: {
+  clients: ClientInfo[];
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const active = value !== "ALL";
+  const label = active ? (clients.find(c => c.id === value)?.label ?? "Wallet") : "All Wallets";
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    }
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, []);
+
+  const options = [
+    { id: "ALL", label: "All Wallets" },
+    ...clients.map(c => ({ id: c.id, label: c.label })),
+  ];
+
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      {/* Trigger */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          display: "flex", alignItems: "center", gap: 6,
+          padding: "5px 10px 5px 13px", borderRadius: 8,
+          fontSize: 12, fontWeight: 600, cursor: "pointer",
+          fontFamily: "inherit",
+          color:      active ? C.accent : C.textSecondary,
+          background: active ? `${C.accent}12` : "rgba(255,255,255,0.03)",
+          border:     `1px solid ${active ? `${C.accent}40` : "rgba(255,255,255,0.06)"}`,
+          transition: "all 0.15s",
+          whiteSpace: "nowrap",
+        }}
+      >
+        {label}
+        <ChevronDown size={12} color={active ? C.accent : C.textMuted}
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.18s" }} />
+      </button>
+
+      {/* Menu */}
+      {open && (
+        <div style={{
+          position: "absolute", top: "calc(100% + 6px)", left: 0,
+          minWidth: 160, zIndex: 50,
+          background: "rgba(8,14,30,0.98)",
+          backdropFilter: "blur(20px)",
+          WebkitBackdropFilter: "blur(20px)",
+          border: `1px solid rgba(0,229,204,0.18)`,
+          borderRadius: 10,
+          boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
+          overflow: "hidden",
+          padding: "4px",
+        }}>
+          {options.map(opt => {
+            const selected = opt.id === value;
+            return (
+              <button
+                key={opt.id}
+                onClick={() => { onChange(opt.id); setOpen(false); }}
+                style={{
+                  display: "block", width: "100%", textAlign: "left",
+                  padding: "8px 12px", borderRadius: 7,
+                  fontSize: 12.5, fontWeight: selected ? 600 : 500,
+                  fontFamily: "inherit",
+                  color:      selected ? C.accent : C.textSecondary,
+                  background: selected ? `${C.accent}12` : "transparent",
+                  border:     "none", cursor: "pointer",
+                  transition: "background 0.12s, color 0.12s",
+                }}
+                onMouseEnter={e => {
+                  if (!selected) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.05)";
+                    (e.currentTarget as HTMLButtonElement).style.color = C.textPrimary;
+                  }
+                }}
+                onMouseLeave={e => {
+                  if (!selected) {
+                    (e.currentTarget as HTMLButtonElement).style.background = "transparent";
+                    (e.currentTarget as HTMLButtonElement).style.color = C.textSecondary;
+                  }
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN COMPONENT                                                           */
@@ -622,32 +726,15 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
           ))}
         </div>
 
-        {/* Client dropdown */}
+        {/* Client dropdown — custom, no native select */}
         {clients.length > 0 && (
           <>
             <div style={{ width: 1, height: 24, background: "rgba(255,255,255,0.06)" }} />
-            <div style={{ position: "relative" }}>
-              <select
-                value={clientFilter}
-                onChange={e => { setClientFilter(e.target.value); setPage(0); }}
-                style={{
-                  appearance: "none", WebkitAppearance: "none",
-                  padding: "5px 28px 5px 12px", borderRadius: 8,
-                  fontSize: 12, fontWeight: 600, fontFamily: "inherit",
-                  color: clientFilter !== "ALL" ? C.accent : C.textSecondary,
-                  background: clientFilter !== "ALL" ? `${C.accent}12` : "rgba(255,255,255,0.03)",
-                  border: `1px solid ${clientFilter !== "ALL" ? `${C.accent}40` : "rgba(255,255,255,0.06)"}`,
-                  cursor: "pointer", outline: "none",
-                }}
-              >
-                <option value="ALL">All Wallets</option>
-                {clients.map(c => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
-              <ChevronDown size={12} color={C.textMuted}
-                style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", pointerEvents: "none" }} />
-            </div>
+            <WalletDropdown
+              clients={clients}
+              value={clientFilter}
+              onChange={v => { setClientFilter(v); setPage(0); }}
+            />
           </>
         )}
       </div>
