@@ -2,52 +2,37 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * middleware.ts  — project root, next to package.json
+ * middleware.ts — project root, next to package.json
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ROOT CAUSE ANALYSIS — ERR_TOO_MANY_REDIRECTS
+ * ROUTING CONTRACT
  * ══════════════════════════════════════════════════════════════════════════════
  *
- * There were two structural bugs that combined to create the loop:
+ *   Unauthenticated + /dashboard/*          →  /login?next=<path>
+ *   Authenticated, no active subscription   →  https://polywhale-plum.vercel.app/pricing
+ *   Authenticated, active sub + /login      →  /dashboard
+ *   Everything else                         →  pass through
  *
- * BUG 1 — Refreshed session cookies were discarded on every redirect.
- * ─────────────────────────────────────────────────────────────────────────────
- * When Supabase refreshes an expiring access token, the SDK calls setAll()
- * to write the new token pair back to the browser.  setAll() writes those
- * cookies to `supabaseResponse`.
- *
- * The previous code returned bare NextResponse.redirect(url) objects for both
- * the dashboard guard and the login bypass.  These are BRAND NEW responses
- * with no cookies — the refreshed tokens sitting on `supabaseResponse` were
- * silently thrown away on every redirect.
- *
- * On the very next request the browser still sent the old, expired token.
- * Supabase couldn't refresh it again (it was already consumed), getUser()
- * returned null, and the guard fired again → infinite loop.
- *
- * FIX: Before returning any redirect, copy every cookie from `supabaseResponse`
- * onto the redirect response so the browser always receives updated tokens.
- *
- * BUG 2 — MIDDLEWARE_INVOCATION_FAILED when env vars are undefined.
- * ─────────────────────────────────────────────────────────────────────────────
- * createServerClient(undefined, undefined) throws "supabaseUrl is required"
- * synchronously in the Edge Runtime, producing a 500 before any await.
- * The try/catch prevents this from crashing the site; it falls through and
- * lets Next.js serve the page normally.  Individual pages still protect routes.
- *
- * ── Routing contract (single source of truth) ────────────────────────────────
- *   Unauthed + /dashboard/*  →  /login?next=<original-path>
- *   Authed   + /login        →  /dashboard/clients/new
- *   Everything else          →  pass through unchanged
+ * ── Two-layer check ──────────────────────────────────────────────────────────
+ *   Layer 1 (here):     fast middleware check — reads profiles row
+ *   Layer 2 (pages):    getSubscription() in Server Components as fallback
  *
  * ── Why getUser() not getSession() ───────────────────────────────────────────
- * getSession() reads the local cookie — it can be spoofed or stale.
- * getUser() makes a server-side call to Supabase and is authoritative.
+ *   getSession() reads local cookie and can be spoofed.
+ *   getUser() is an authoritative server-side call to Supabase.
+ *
+ * ── Cookie forwarding on redirects ───────────────────────────────────────────
+ *   Any bare NextResponse.redirect() discards refreshed session cookies,
+ *   causing ERR_TOO_MANY_REDIRECTS. We always copy cookies from
+ *   supabaseResponse onto every redirect before returning it.
  */
 
+const PRICING_URL = "https://polywhale-plum.vercel.app/pricing";
+
+/** Statuses that grant dashboard access */
+const ACTIVE_STATUSES = new Set(["active", "trialing"]);
+
 export async function middleware(request: NextRequest) {
-  // Start with a plain pass-through.  setAll() will replace this with a
-  // response that carries the refreshed cookie headers.
   let supabaseResponse = NextResponse.next({ request });
 
   try {
@@ -60,13 +45,9 @@ export async function middleware(request: NextRequest) {
             return request.cookies.getAll();
           },
           setAll(cookiesToSet) {
-            // 1. Write the new tokens into the ongoing request so the rest of
-            //    this middleware chain sees them.
             cookiesToSet.forEach(({ name, value }) =>
               request.cookies.set(name, value)
             );
-            // 2. Replace supabaseResponse with a fresh one built from the
-            //    updated request, then stamp all the new cookie headers on it.
             supabaseResponse = NextResponse.next({ request });
             cookiesToSet.forEach(({ name, value, options }) =>
               supabaseResponse.cookies.set(name, value, options)
@@ -76,66 +57,74 @@ export async function middleware(request: NextRequest) {
       }
     );
 
-    // Authoritative session check.  Never call getSession() in middleware.
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
+    const { data: { user } } = await supabase.auth.getUser();
     const { pathname } = request.nextUrl;
 
-    // ── GUARD: block unauthenticated requests to /dashboard/* ────────────────
+    /* ── Helper: copy session cookies onto any redirect ── */
+    function withCookies(redirect: NextResponse): NextResponse {
+      supabaseResponse.cookies.getAll().forEach(cookie => {
+        redirect.cookies.set(cookie.name, cookie.value, cookie);
+      });
+      return redirect;
+    }
+
+    /* ── LAYER 1: unauthenticated → login ─────────────────────────────── */
     if (!user && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
-      url.search   = "";
+      url.search = "";
       url.searchParams.set("next", pathname);
-
-      const redirectResponse = NextResponse.redirect(url);
-
-      // *** THE CRITICAL FIX ***
-      // Copy every cookie from supabaseResponse onto the redirect so that any
-      // tokens Supabase just refreshed reach the browser.  Without this, the
-      // refreshed tokens are lost, the browser resends the expired token on
-      // the next request, getUser() returns null again, and the guard fires
-      // forever — ERR_TOO_MANY_REDIRECTS.
-      supabaseResponse.cookies.getAll().forEach(cookie => {
-        redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
-      });
-
-      return redirectResponse;
+      return withCookies(NextResponse.redirect(url));
     }
 
-    // ── BYPASS: send authenticated users away from /login ────────────────────
+    /* ── LAYER 2: authenticated → check subscription ──────────────────── */
+    if (user && pathname.startsWith("/dashboard")) {
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("subscription_status, tier")
+        .eq("id", user.id)
+        .single();
+
+      const hasAccess =
+        profile?.subscription_status &&
+        ACTIVE_STATUSES.has(profile.subscription_status) &&
+        (profile.tier === "whale_hunter" || profile.tier === "market_maker");
+
+      if (!hasAccess) {
+        // Paid subscriber lapsed, cancelled, or never subscribed
+        // → send to pricing page on the main site
+        return withCookies(NextResponse.redirect(PRICING_URL));
+      }
+    }
+
+    /* ── BYPASS: authenticated + active sub → away from /login ─────────── */
     if (user && pathname === "/login") {
+      // Quick subscription check so non-subscribers don't bounce to dashboard
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("subscription_status, tier")
+        .eq("id", user.id)
+        .single();
+
+      const hasAccess =
+        profile?.subscription_status &&
+        ACTIVE_STATUSES.has(profile.subscription_status) &&
+        (profile.tier === "whale_hunter" || profile.tier === "market_maker");
+
       const url = request.nextUrl.clone();
-      url.pathname = "/dashboard/clients/new";
-      url.search   = "";
-
-      const redirectResponse = NextResponse.redirect(url);
-
-      // Same fix — forward any refreshed cookies onto this redirect too.
-      supabaseResponse.cookies.getAll().forEach(cookie => {
-        redirectResponse.cookies.set(cookie.name, cookie.value, cookie);
-      });
-
-      return redirectResponse;
+      url.search = "";
+      url.pathname = hasAccess ? "/dashboard" : "/";
+      return withCookies(NextResponse.redirect(url));
     }
 
   } catch (err) {
-    // Env vars missing or Supabase unreachable.
-    // Fail open: the site stays up.  Page-level guards still protect routes.
-    console.error("[middleware] Supabase error — falling through:", err);
+    // Env vars missing or Supabase unreachable — fail open, page guards take over
+    console.error("[middleware] error — falling through:", err);
   }
 
-  // Pass through with refreshed session cookies intact.
   return supabaseResponse;
 }
 
-/**
- * Matcher — run on every path except Next.js internals and static assets.
- * The broad match is intentional: the session refresh must run on every
- * HTML request so server components always see a valid, current token.
- */
 export const config = {
   matcher: [
     "/((?!_next/static|_next/image|favicon\\.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
