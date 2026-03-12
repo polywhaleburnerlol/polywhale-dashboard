@@ -174,3 +174,66 @@ export async function removeClient(clientId: string): Promise<RemoveResult> {
   revalidatePath("/dashboard/clients");
   return { success: true };
 }
+
+// ---------------------------------------------------------------------------
+// Whale watchlist management
+// ---------------------------------------------------------------------------
+
+export type AddWhaleResult =
+  | { success: true; whaleId: string }
+  | { success: false; error: string };
+
+/**
+ * Upserts a whale address into the whale_watchlist table.
+ * Validates that the address is a proper 42-char Ethereum address.
+ */
+export async function addWhaleAddress(
+  address: string,
+  label: string
+): Promise<AddWhaleResult> {
+  const addr = (address ?? "").trim().toLowerCase();
+
+  if (!addr.startsWith("0x") || addr.length !== 42) {
+    return {
+      success: false,
+      error: "Must be a valid 42-character Ethereum address (0x…).",
+    };
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  const { data, error } = await supabase
+    .from("whale_watchlist")
+    .upsert(
+      { address: addr, label: label || null },
+      { onConflict: "address" }
+    )
+    .select("id")
+    .single();
+
+  if (error) {
+    return { success: false, error: `Database error: ${error.message}` };
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { success: true, whaleId: data.id };
+}
+
+export async function removeWhaleAddress(
+  id: string
+): Promise<RemoveResult> {
+  if (!id) return { success: false, error: "Missing whale ID." };
+
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("whale_watchlist")
+    .delete()
+    .eq("id", id);
+
+  if (error) {
+    return { success: false, error: `Database error: ${error.message}` };
+  }
+
+  revalidatePath("/dashboard/settings");
+  return { success: true };
+}
