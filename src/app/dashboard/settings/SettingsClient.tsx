@@ -3,8 +3,7 @@
 import { useState, useCallback } from "react";
 import Link from "next/link";
 import {
-  Copy, Check, Trash2, Plus, Eye, Server,
-  Info, Shield,
+  Copy, Check, Trash2, Plus, Eye, Server, Shield, Info,
 } from "lucide-react";
 import { toggleClientActive } from "@/app/actions/client";
 
@@ -275,11 +274,13 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
       label: "Dedup Window",
       value: `${botConfig.dedupWindowMs.toLocaleString()}ms`,
       desc:  "Minimum gap between duplicate trade signals",
+      color: C.accent,
     },
     {
       label: "Max Slippage",
       value: `${(botConfig.maxSlippagePct * 100).toFixed(1)}%`,
       desc:  "Maximum acceptable price slippage per trade",
+      color: C.red,
     },
     {
       label: "Polygon WSS",
@@ -287,11 +288,13 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
         ? truncAddr(botConfig.polygonWssUrl.replace("wss://", "").split("/")[0] || "")
         : "Not set",
       desc:  "QuickNode WebSocket endpoint for event streaming",
+      color: C.accentAlt,
     },
     {
       label: "Heartbeat Port",
       value: botConfig.heartbeatPort.toString(),
       desc:  "Health-check HTTP port exposed by the bot",
+      color: C.green,
     },
   ];
 
@@ -585,11 +588,12 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
                 </p>
               </div>
               <span style={{
-                fontSize: 13, fontWeight: 600, fontFamily: "monospace",
-                color: C.textSecondary, flexShrink: 0, marginLeft: 16,
-                background: "rgba(255,255,255,0.03)",
-                border: "1px solid rgba(255,255,255,0.06)",
-                padding: "4px 10px", borderRadius: 7,
+                fontSize: 13, fontWeight: 700, fontFamily: "monospace",
+                color: row.color, flexShrink: 0, marginLeft: 16,
+                background: `${row.color}10`,
+                border: `1px solid ${row.color}28`,
+                padding: "5px 12px", borderRadius: 8,
+                letterSpacing: "0.02em",
               }}>
                 {row.value}
               </span>
@@ -597,19 +601,7 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
           ))}
         </div>
 
-        {/* ── Env var notice ───────────────────────────────────────────── */}
-        <div style={{
-          marginTop: 18, padding: "10px 14px", borderRadius: 10,
-          display: "flex", alignItems: "center", gap: 9,
-          background: "rgba(124,92,252,0.05)", border: "1px solid rgba(124,92,252,0.12)",
-        }}>
-          <Info size={14} color={C.accentAlt} style={{ flexShrink: 0 }} />
-          <p style={{ fontSize: 12, color: C.textSecondary, lineHeight: 1.5 }}>
-            Configuration values are set via environment variables on the bot process.
-            To change them, update your <span style={{ fontFamily: "monospace", fontSize: 11.5, color: C.textPrimary }}>.env</span> file
-            and restart the bot.
-          </p>
-        </div>
+
       </div>
 
     </section>
