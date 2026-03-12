@@ -1,4 +1,4 @@
-"use client";
+"use client"; // updated
 
 import { useState, useCallback } from "react";
 import Link from "next/link";
