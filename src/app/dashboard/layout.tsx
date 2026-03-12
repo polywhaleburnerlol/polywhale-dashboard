@@ -1,31 +1,51 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
-import DashboardNav from "@/components/DashboardNav";
+import { redirect } from "next/navigation";
+import { ActiveNavLink } from "@/components/ActiveNavLink";
 import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
+import { createSupabaseServerClient } from "@/utils/supabase/server";
+import { createClient } from "@supabase/supabase-js";
 
 /**
- * src/app/dashboard/layout.tsx — persistent shell for all /dashboard/* routes
+ * src/app/dashboard/layout.tsx
  *
- * ── What this file does ───────────────────────────────────────────────────────
- * Provides the visual container every /dashboard/* page renders inside:
- *   <PolygonMeshBackground />   animated SVG mesh (position:fixed, z-index:0)
- *   <aside>                     glass sidebar     (z-index:10)
- *   <header>                    sticky top bar    (z-index:5)
- *   <main>                      scrollable page slot for {children}
+ * ── Subscription gate ─────────────────────────────────────────────────────────
+ * This layout is async and runs the subscription check using the service role
+ * client (bypasses RLS). This is the correct place to enforce subscriptions —
+ * NOT in middleware (which uses the anon key and gets blocked by RLS).
  *
- * ── What this file DOES NOT do ────────────────────────────────────────────────
- * Zero redirect() calls. Zero Supabase imports. Zero auth logic.
- * Auth is handled exclusively by middleware.ts (Edge layer guard) and
- * src/app/page.tsx (entry-point routing).
- *
- * ── Background architecture ───────────────────────────────────────────────────
- * PolygonMeshBackground is position:fixed so it fills the entire viewport and
- * persists across client-side navigations without re-mounting.
- * Outer wrapper: position:relative (stacking context for z-indexes) but
- * NO overflow:hidden — a fixed child escapes it and it creates a stacking
- * context that can break future dropdown/modal UIs.
- * overflow:hidden lives only on the main column to prevent horizontal bleed.
+ * Flow:
+ *   Not logged in          →  middleware already redirected to /login
+ *   Logged in, no sub      →  redirect to pricing page
+ *   Logged in, active sub  →  render dashboard
  */
+
+const PRICING_URL = "https://polywhale-plum.vercel.app/pricing";
+const ACTIVE_STATUSES = new Set(["active", "trialing"]);
+
+async function checkSubscription(userId: string): Promise<boolean> {
+  try {
+    const supabaseAdmin = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
+
+    const { data } = await supabaseAdmin
+      .from("profiles")
+      .select("subscription_status, tier")
+      .eq("id", userId)
+      .single();
+
+    return (
+      !!data?.subscription_status &&
+      ACTIVE_STATUSES.has(data.subscription_status) &&
+      (data.tier === "whale_hunter" || data.tier === "market_maker")
+    );
+  } catch {
+    return false;
+  }
+}
 
 const C = {
   bg:            "#060b18",
@@ -34,8 +54,87 @@ const C = {
   textSecondary: "#8492a6",
 };
 
+const NAV_ITEMS = [
+  {
+    href:  "/dashboard",
+    label: "Overview",
+    exact: true,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3"  y="3"  width="7" height="7" />
+        <rect x="14" y="3"  width="7" height="7" />
+        <rect x="14" y="14" width="7" height="7" />
+        <rect x="3"  y="14" width="7" height="7" />
+      </svg>
+    ),
+  },
+  {
+    href:  "/dashboard/clients/new",
+    label: "Add Client",
+    exact: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M16 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+        <circle cx="8.5" cy="7" r="4" />
+        <line x1="20" y1="8" x2="20" y2="14" />
+        <line x1="23" y1="11" x2="17" y2="11" />
+      </svg>
+    ),
+  },
+  {
+    href:  "/dashboard/trades",
+    label: "Trade History",
+    exact: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+      </svg>
+    ),
+  },
+  {
+    href:  "/dashboard/settings",
+    label: "Settings",
+    exact: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+        stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <circle cx="12" cy="12" r="3" />
+        <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83
+                 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33
+                 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09
+                 A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06
+                 a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15
+                 a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09
+                 A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06
+                 a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68
+                 a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09
+                 a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06
+                 a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9
+                 a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09
+                 a1.65 1.65 0 00-1.51 1z" />
+      </svg>
+    ),
+  },
+];
 
-export default function DashboardLayout({ children }: { children: ReactNode }) {
+export default async function DashboardLayout({ children }: { children: ReactNode }) {
+  // ── Subscription gate ───────────────────────────────────────────────────────
+  const supabase = await createSupabaseServerClient();
+  const { data: { user } } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  const hasSubscription = await checkSubscription(user.id);
+  if (!hasSubscription) {
+    redirect(PRICING_URL);
+  }
+  // ───────────────────────────────────────────────────────────────────────────
+
   return (
     <>
       <style>{`
@@ -44,7 +143,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         .pw-layout       { font-family: 'DM Sans', sans-serif; }
         .pw-font-display { font-family: 'Syne', sans-serif; }
 
-        /* Glass sidebar */
         .pw-sidebar {
           position: relative; z-index: 10;
           background: rgba(10,16,32,0.88);
@@ -55,7 +153,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         .pw-sidebar ::-webkit-scrollbar-track { background: transparent; }
         .pw-sidebar ::-webkit-scrollbar-thumb { background: rgba(0,229,204,0.15); border-radius: 4px; }
 
-        /* Sticky top bar */
         .pw-topbar {
           position: sticky; top: 0; z-index: 5;
           background: rgba(6,11,24,0.92);
@@ -63,7 +160,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           border-bottom: 1px solid rgba(0,229,204,0.08);
         }
 
-        /* Nav links */
         .pw-nav-link {
           display: flex; align-items: center; gap: 11px;
           padding: 10px 12px; border-radius: 10px;
@@ -87,7 +183,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           background: linear-gradient(180deg, #00e5cc, #7c5cfc);
         }
 
-        /* Engine pulse */
         @keyframes pw-ping {
           0%   { transform: scale(1);   opacity: 0.6; }
           70%  { transform: scale(2.2); opacity: 0;   }
@@ -95,7 +190,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         }
         .pw-ping { animation: pw-ping 2s cubic-bezier(0,0,0.2,1) infinite; }
 
-        /* Chain badge */
         .pw-chain-badge {
           display: inline-flex; align-items: center; gap: 7px;
           padding: 5px 12px; border-radius: 100px;
@@ -103,14 +197,12 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           font-size: 11.5px; font-weight: 600; color: #a78bfa; letter-spacing: 0.01em;
         }
 
-        /* Gradient separator */
         .pw-sep {
           height: 1px;
           background: linear-gradient(90deg, transparent, rgba(0,229,204,0.12), transparent);
           margin: 8px 12px;
         }
 
-        /* Back link */
         .pw-back {
           display: flex; align-items: center; gap: 6px;
           font-size: 12px; font-weight: 500; color: #8492a6;
@@ -119,30 +211,17 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
         .pw-back:hover { color: #00e5cc; }
       `}</style>
 
-      {/*
-        LAYER 0 — PolygonMeshBackground (position:fixed, z-index:0)
-        Placed BEFORE the flex wrapper so it's outside normal flex flow.
-        Fills the entire viewport; persists across client-side navigations.
-      */}
       <PolygonMeshBackground />
 
-      {/*
-        Outer flex shell.
-        position:relative → stacking context for sidebar/main z-indexes.
-        background:transparent → fixed mesh shows through.
-        NO overflow:hidden → fixed children escape it; would create unwanted stacking context.
-      */}
       <div
         className="pw-layout"
         style={{ display: "flex", minHeight: "100vh", position: "relative", background: "transparent" }}
       >
-
-        {/* ═══ SIDEBAR  z-index:10 ════════════════════════════════════════════ */}
+        {/* ═══ SIDEBAR ════════════════════════════════════════════════════════ */}
         <aside
           className="pw-sidebar"
           style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
         >
-          {/* Logotype */}
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
             padding: "20px 20px 18px", borderBottom: "1px solid rgba(0,229,204,0.08)",
@@ -163,7 +242,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </span>
           </div>
 
-          {/* Engine status */}
           <div style={{ padding: "14px 14px 0" }}>
             <div style={{
               display: "flex", alignItems: "center", gap: 9,
@@ -189,7 +267,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </div>
 
-          {/* Navigation */}
           <nav style={{ flex: 1, overflowY: "auto", padding: "16px 10px 8px" }}>
             <p style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.10em",
@@ -197,11 +274,19 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             }}>
               Navigation
             </p>
-            <DashboardNav />
+            <ul style={{ listStyle: "none", display: "flex", flexDirection: "column", gap: 2 }}>
+              {NAV_ITEMS.map(item => (
+                <li key={item.href}>
+                  <ActiveNavLink href={item.href} exact={item.exact} className="pw-nav-link">
+                    {item.icon}
+                    {item.label}
+                  </ActiveNavLink>
+                </li>
+              ))}
+            </ul>
             <div className="pw-sep" style={{ marginTop: 16 }} />
           </nav>
 
-          {/* Footer */}
           <div style={{ padding: "14px 18px 20px", borderTop: "1px solid rgba(0,229,204,0.07)" }}>
             <Link href="/" className="pw-back" style={{ marginBottom: 12 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
@@ -216,18 +301,13 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
           </div>
         </aside>
 
-        {/* ═══ MAIN COLUMN  z-index:1 ══════════════════════════════════════════
-            overflow:hidden on THIS div only (not outer wrapper) — prevents
-            horizontal bleed without fighting the fixed mesh background.
-            Only <main> scrolls; topbar stays sticky at top:0.
-        */}
+        {/* ═══ MAIN COLUMN ════════════════════════════════════════════════════ */}
         <div style={{
           flex: 1, minWidth: 0,
           display: "flex", flexDirection: "column",
           position: "relative", zIndex: 1,
           overflow: "hidden",
         }}>
-          {/* Sticky top bar */}
           <header className="pw-topbar" style={{
             height: 60, flexShrink: 0,
             display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -265,7 +345,6 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
             </div>
           </header>
 
-          {/* Scrollable page slot — every /dashboard/* page renders here */}
           <main style={{ flex: 1, overflowY: "auto" }}>
             {children}
           </main>

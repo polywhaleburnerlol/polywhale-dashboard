@@ -4,33 +4,15 @@ import { NextResponse, type NextRequest } from "next/server";
 /**
  * middleware.ts — project root, next to package.json
  *
- * ══════════════════════════════════════════════════════════════════════════════
- * ROUTING CONTRACT
- * ══════════════════════════════════════════════════════════════════════════════
+ * ── Routing contract ─────────────────────────────────────────────────────────
+ *   Unauthenticated + /dashboard/*  →  /login?next=<path>
+ *   Authenticated   + /login        →  /dashboard
+ *   Everything else                 →  pass through
  *
- *   Unauthenticated + /dashboard/*          →  /login?next=<path>
- *   Authenticated, no active subscription   →  https://polywhale-plum.vercel.app/pricing
- *   Authenticated, active sub + /login      →  /dashboard
- *   Everything else                         →  pass through
- *
- * ── Two-layer check ──────────────────────────────────────────────────────────
- *   Layer 1 (here):     fast middleware check — reads profiles row
- *   Layer 2 (pages):    getSubscription() in Server Components as fallback
- *
- * ── Why getUser() not getSession() ───────────────────────────────────────────
- *   getSession() reads local cookie and can be spoofed.
- *   getUser() is an authoritative server-side call to Supabase.
- *
- * ── Cookie forwarding on redirects ───────────────────────────────────────────
- *   Any bare NextResponse.redirect() discards refreshed session cookies,
- *   causing ERR_TOO_MANY_REDIRECTS. We always copy cookies from
- *   supabaseResponse onto every redirect before returning it.
+ * Subscription enforcement is handled in layout.tsx, NOT here.
+ * Querying the profiles table in middleware with the anon key gets blocked
+ * by RLS and causes ERR_TOO_MANY_REDIRECTS.
  */
-
-const PRICING_URL = "https://polywhale-plum.vercel.app/pricing";
-
-/** Statuses that grant dashboard access */
-const ACTIVE_STATUSES = new Set(["active", "trialing"]);
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
@@ -60,7 +42,6 @@ export async function middleware(request: NextRequest) {
     const { data: { user } } = await supabase.auth.getUser();
     const { pathname } = request.nextUrl;
 
-    /* ── Helper: copy session cookies onto any redirect ── */
     function withCookies(redirect: NextResponse): NextResponse {
       supabaseResponse.cookies.getAll().forEach(cookie => {
         redirect.cookies.set(cookie.name, cookie.value, cookie);
@@ -68,7 +49,7 @@ export async function middleware(request: NextRequest) {
       return redirect;
     }
 
-    /* ── LAYER 1: unauthenticated → login ─────────────────────────────── */
+    // Block unauthenticated access to dashboard
     if (!user && pathname.startsWith("/dashboard")) {
       const url = request.nextUrl.clone();
       url.pathname = "/login";
@@ -77,48 +58,15 @@ export async function middleware(request: NextRequest) {
       return withCookies(NextResponse.redirect(url));
     }
 
-    /* ── LAYER 2: authenticated → check subscription ──────────────────── */
-    if (user && pathname.startsWith("/dashboard")) {
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("subscription_status, tier")
-        .eq("id", user.id)
-        .single();
-
-      const hasAccess =
-        profile?.subscription_status &&
-        ACTIVE_STATUSES.has(profile.subscription_status) &&
-        (profile.tier === "whale_hunter" || profile.tier === "market_maker");
-
-      if (!hasAccess) {
-        // Paid subscriber lapsed, cancelled, or never subscribed
-        // → send to pricing page on the main site
-        return withCookies(NextResponse.redirect(PRICING_URL));
-      }
-    }
-
-    /* ── BYPASS: authenticated + active sub → away from /login ─────────── */
+    // Send logged-in users away from /login
     if (user && pathname === "/login") {
-      // Quick subscription check so non-subscribers don't bounce to dashboard
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("subscription_status, tier")
-        .eq("id", user.id)
-        .single();
-
-      const hasAccess =
-        profile?.subscription_status &&
-        ACTIVE_STATUSES.has(profile.subscription_status) &&
-        (profile.tier === "whale_hunter" || profile.tier === "market_maker");
-
       const url = request.nextUrl.clone();
+      url.pathname = "/dashboard";
       url.search = "";
-      url.pathname = hasAccess ? "/dashboard" : "/";
       return withCookies(NextResponse.redirect(url));
     }
 
   } catch (err) {
-    // Env vars missing or Supabase unreachable — fail open, page guards take over
     console.error("[middleware] error — falling through:", err);
   }
 
