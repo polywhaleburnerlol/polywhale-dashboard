@@ -77,6 +77,7 @@ export default async function DashboardOverviewPage() {
     totalBalanceUsd: 0,
     totalInvestedUsd: 0,
     chartPoints: [],
+    lastHeartbeatIso: null,
   };
 
   let supabase;
@@ -185,6 +186,19 @@ export default async function DashboardOverviewPage() {
 
   const totalBalanceUsd = clients.reduce((s, c) => s + c.usdc_balance, 0);
 
+  /* ── 7. Engine heartbeat ─────────────────────────────────────────────── */
+  let lastHeartbeatIso: string | null = null;
+  try {
+    const { data: hb } = await supabase
+      .from("bot_heartbeat")
+      .select("updated_at")
+      .eq("id", 1)
+      .single();
+    lastHeartbeatIso = hb?.updated_at ?? null;
+  } catch {
+    // table may not exist yet — engine status will show as Unknown
+  }
+
   /* ── 6. Compute chart points + total invested ───────────────────────────── */
   // Group BUY trades by calendar date, using each client's trade_amount_usd
   const dailySpend: Record<string, number> = {};
@@ -207,7 +221,7 @@ export default async function DashboardOverviewPage() {
 
   return (
     <DashboardOverviewClient
-      data={{ clients, recentTrades, totalTradeCount, totalBalanceUsd, totalInvestedUsd, chartPoints }}
+      data={{ clients, recentTrades, totalTradeCount, totalBalanceUsd, totalInvestedUsd, chartPoints, lastHeartbeatIso }}
     />
   );
 }

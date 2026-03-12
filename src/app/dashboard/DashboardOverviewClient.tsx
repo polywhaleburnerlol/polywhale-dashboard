@@ -4,7 +4,7 @@ import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import { removeClient } from "@/app/actions/client";
 import {
-  Wallet, TrendingUp, Activity, Zap,
+  Wallet, TrendingUp, BarChart2, Radio, DollarSign, Layers,
   ArrowUpRight, ArrowDownRight, Copy, Check,
   ExternalLink, ChevronRight, Trash2, RefreshCw,
 } from "lucide-react";
@@ -47,6 +47,7 @@ export type DashboardData = {
   totalBalanceUsd: number;
   totalInvestedUsd: number;
   chartPoints: ChartPoint[];
+  lastHeartbeatIso: string | null;
 };
 
 /* ══════════════════════════════════════════════════════════════════════════ */
@@ -422,6 +423,17 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
 
   const avgTrade = totalTradeCount > 0 ? data.totalInvestedUsd / totalTradeCount : 0;
 
+  // Engine status from heartbeat
+  const engineStatus: "online" | "stale" | "unknown" = (() => {
+    if (!data.lastHeartbeatIso) return "unknown";
+    const age = Date.now() - new Date(data.lastHeartbeatIso).getTime();
+    return age < 2 * 60 * 1000 ? "online" : "stale"; // stale if >2 min
+  })();
+  const engineLabel = { online: "Active", stale: "Stale", unknown: "Unknown" }[engineStatus];
+  const engineSub   = { online: "All systems nominal", stale: "Bot may be offline", unknown: "No heartbeat yet" }[engineStatus];
+  const engineColor = { online: C.green, stale: C.red, unknown: C.textMuted }[engineStatus];
+  const engineChange = { online: "Online", stale: "Check bot process", unknown: "Not running" }[engineStatus];
+
   const handleRemove = useCallback((clientId: string) => {
     setRemovingId(clientId);
     startTransition(async () => {
@@ -460,18 +472,18 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
       sub:    "Lifetime",
       change: totalTradeCount > 0 ? `${Math.min(totalTradeCount, 18)} this week` : "None yet",
       up:    totalTradeCount > 0,
-      icon:  Activity,
+      icon:  BarChart2,
       color: C.accentAlt,
     },
     {
       label:  "Engine Status",
-      value:  "Active",
-      sub:    "All systems nominal",
-      change: "Online",
-      up:     true,
-      icon:   Zap,
-      color:  C.accent,
-      pulse:  true,
+      value:  engineLabel,
+      sub:    engineSub,
+      change: engineChange,
+      up:     engineStatus === "online",
+      icon:   Radio,
+      color:  engineColor,
+      pulse:  engineStatus === "online",
     },
   ];
 
@@ -846,7 +858,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
               alignItems: "center", justifyContent: "center",
               gap: 8, padding: "40px 16px",
             }}>
-              <Activity size={28} color={C.textMuted} />
+              <BarChart2 size={28} color={C.textMuted} strokeWidth={1.5} />
               <p style={{ fontSize: 14, color: C.textMuted }}>No trades recorded yet.</p>
               <p style={{ fontSize: 12, color: C.textMuted }}>
                 Trades will appear here once the engine mirrors a whale position.
