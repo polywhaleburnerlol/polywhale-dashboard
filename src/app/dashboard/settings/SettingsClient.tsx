@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition, useCallback } from "react";
+import { useState, useCallback } from "react";
 import Link from "next/link";
 import {
   Copy, Check, Trash2, Plus, Eye, Server,
@@ -248,7 +248,6 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
   /* ── Whale state ────────────────────────────────────────────────────── */
   const [whales, setWhales]           = useState(data.whaleAddresses);
   const [removingWhale, setRemovingWhale] = useState<string | null>(null);
-  const [, startTransition]           = useTransition();
 
   /* ── Engine status — same logic as DashboardOverviewClient ──────────── */
   const engineStatus: "online" | "stale" | "unknown" = (() => {
@@ -260,13 +259,14 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
   const engineLabel = { online: "Online", stale: "Stale", unknown: "Unknown" }[engineStatus];
 
   /* ── Whale handlers ─────────────────────────────────────────────────── */
-  const handleToggleClient = useCallback(async (id: string, currentActive: boolean) => {
+  const handleToggleClient = useCallback((id: string, currentActive: boolean) => {
     setTogglingId(id);
-    const result = await toggleClientActive(id, !currentActive);
-    if (result.success) {
-      setClientList(prev => prev.map(c => c.id === id ? { ...c, is_active: !currentActive } : c));
-    }
-    setTogglingId(null);
+    toggleClientActive(id, !currentActive).then(result => {
+      if (result.success) {
+        setClientList(prev => prev.map(cl => cl.id === id ? { ...cl, is_active: !currentActive } : cl));
+      }
+      setTogglingId(null);
+    });
   }, []);
 
   /* ── Config rows ────────────────────────────────────────────────────── */
@@ -339,12 +339,16 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
 
         {envWhaleAddresses.length === 0 ? (
           <div style={{
-            padding: "20px 16px", borderRadius: 10,
-            background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.06)",
-            textAlign: "center",
+            padding: "16px 18px", borderRadius: 10,
+            background: "rgba(124,92,252,0.05)", border: "1px solid rgba(124,92,252,0.15)",
+            display: "flex", alignItems: "flex-start", gap: 10,
           }}>
-            <p style={{ fontSize: 13, color: C.textMuted }}>
-              No whale addresses found. Set <span style={{ fontFamily: "monospace", color: C.textSecondary }}>WHALE_ADDRESSES</span> in your bot's <span style={{ fontFamily: "monospace", color: C.textSecondary }}>.env</span> file as a comma-separated list of Polygon wallet addresses.
+            <Info size={15} color={C.accentAlt} style={{ flexShrink: 0, marginTop: 1 }} />
+            <p style={{ fontSize: 13, color: C.textSecondary, lineHeight: 1.6 }}>
+              To display your watched whales here, add <span style={{ fontFamily: "monospace", fontSize: 12, color: C.textPrimary }}>WHALE_ADDRESSES</span> to your{" "}
+              <strong style={{ color: C.textPrimary }}>Vercel environment variables</strong> (not just your bot's .env).
+              Format: comma-separated Polygon addresses, e.g.{" "}
+              <span style={{ fontFamily: "monospace", fontSize: 11.5, color: C.textMuted }}>0xabc…,0xdef…</span>
             </p>
           </div>
         ) : (
@@ -497,16 +501,18 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
                           transition: "all 0.18s", opacity: togglingId === c.id ? 0.5 : 1,
                         }}
                         onMouseEnter={e => {
+                          if (togglingId === c.id) return;
                           const el = e.currentTarget as HTMLButtonElement;
-                          el.style.background = c.is_active ? `${C.red}12` : `${C.green}12`;
-                          el.style.color      = c.is_active ? C.red : C.green;
-                          el.style.borderColor = c.is_active ? `${C.red}30` : `${C.green}30`;
+                          el.style.background  = c.is_active ? `${C.red}12`  : `${C.green}12`;
+                          el.style.color       = c.is_active ? C.red         : C.green;
+                          el.style.borderColor = c.is_active ? `${C.red}30`  : `${C.green}30`;
                         }}
                         onMouseLeave={e => {
+                          if (togglingId === c.id) return;
                           const el = e.currentTarget as HTMLButtonElement;
-                          el.style.background = c.is_active ? `${C.green}12` : "rgba(255,255,255,0.03)";
-                          el.style.color      = c.is_active ? C.green : C.textMuted;
-                          el.style.borderColor = c.is_active ? `${C.green}28` : "rgba(255,255,255,0.08)";
+                          el.style.background  = c.is_active ? `${C.green}12`           : "rgba(255,255,255,0.03)";
+                          el.style.color       = c.is_active ? C.green                  : C.textMuted;
+                          el.style.borderColor = c.is_active ? `${C.green}28`           : "rgba(255,255,255,0.08)";
                         }}
                       >
                         <span style={{
