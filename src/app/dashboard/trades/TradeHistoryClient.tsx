@@ -2,8 +2,7 @@
 
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import {
-  Activity, TrendingUp, BarChart3, Target,
-  ArrowUpRight, ArrowDownRight, Copy, Check,
+  GitCompare, ArrowUpRight, ArrowDownRight, Copy, Check,
   Download, ChevronLeft, ChevronRight, ChevronDown,
   ArrowUpDown, Search,
 } from "lucide-react";
@@ -362,6 +361,64 @@ function WalletDropdown({
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/*  CUSTOM KPI ICONS                                                          */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/** Total Trades — stacked execution receipts */
+function IconTrades({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <rect x="3" y="7" width="14" height="10" rx="2"
+            stroke={color} strokeWidth="1.4"/>
+      <path d="M3 10H17" stroke={color} strokeWidth="1.2" opacity="0.35"/>
+      <path d="M6 3H14" stroke={color} strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/>
+      <path d="M8 5H12" stroke={color} strokeWidth="1.4" strokeLinecap="round" opacity="0.3"/>
+      <path d="M7 13.5H10M13 13.5H13.5" stroke={color} strokeWidth="1.4" strokeLinecap="round" opacity="0.6"/>
+    </svg>
+  );
+}
+
+/** Total Invested — capital arrow launching through twin rails */
+function IconCapital({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <path d="M10 16V4" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M6 8L10 4L14 8" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4 12H7.5" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/>
+      <path d="M12.5 12H16" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/>
+      <path d="M4 15H7" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.3"/>
+      <path d="M13 15H16" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.3"/>
+    </svg>
+  );
+}
+
+/** Avg Trade Size — precision balance beam */
+function IconScale({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <path d="M10 3V17" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+      <path d="M6 17H14" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+      <path d="M3 8H17" stroke={color} strokeWidth="1.4" strokeLinecap="round"/>
+      <circle cx="6" cy="12" r="2.2" stroke={color} strokeWidth="1.3"/>
+      <circle cx="14" cy="11" r="2.2" stroke={color} strokeWidth="1.3"/>
+      <path d="M3 8L6 12M17 8L14 11" stroke={color} strokeWidth="1.2" opacity="0.45"/>
+    </svg>
+  );
+}
+
+/** Most Traded — flame (hottest market) */
+function IconFlame({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <path d="M10 17C6.5 17 4 14.5 4 11.5C4 9.5 5 8 6.5 7C6.3 8 6.8 9 7.5 9.5C7.5 7 9 4.5 11.5 3C11 5 11.5 6.5 12.5 7.5C13 6.8 13.2 6 13 5C15 6.5 16 8.8 16 11.5C16 14.5 13.5 17 10 17Z"
+            stroke={color} strokeWidth="1.45" strokeLinejoin="round"/>
+      <path d="M10 17C8.3 17 7 15.8 7 14.2C7 13.1 7.7 12.2 8.5 11.8C8.4 12.4 8.7 13 9.2 13.3C9.2 12 10 10.8 11.2 10C11 11 11.2 12 12 12.8C12.5 12.2 13 11.3 13 10.5C14 11.3 14.5 12.5 14.5 13.8C14.5 15.6 12.5 17 10 17Z"
+            stroke={color} strokeWidth="1.3" strokeLinejoin="round" opacity="0.5"/>
+    </svg>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN COMPONENT                                                           */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
@@ -472,11 +529,12 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
 
     for (const t of filtered) {
       const isBuy = t.side.toUpperCase() === "BUY";
-      totalInvested += isBuy ? t.trade_amount_usd : (t.shares ?? 0) * t.price;
+      if (isBuy) totalInvested += t.trade_amount_usd; // Only BUYs count as capital deployed
       marketCounts[t.market_title] = (marketCounts[t.market_title] ?? 0) + 1;
     }
 
-    const avgSize = totalTrades > 0 ? totalInvested / totalTrades : 0;
+    const buyCount = filtered.filter(t => t.side.toUpperCase() === "BUY").length;
+    const avgSize = buyCount > 0 ? totalInvested / buyCount : 0;
 
     let mostTraded = "—";
     let maxCount   = 0;
@@ -493,21 +551,21 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
       label: "Total Trades",
       value: stats.totalTrades.toLocaleString(),
       sub:   "matching filters",
-      icon:  Activity,
+      icon:  (col: string) => <IconTrades color={col} />,
       color: C.accentAlt,
     },
     {
       label: "Total Invested",
       value: fmtUsd(stats.totalInvested),
-      sub:   "cumulative",
-      icon:  TrendingUp,
+      sub:   "BUY trades only",
+      icon:  (col: string) => <IconCapital color={col} />,
       color: C.green,
     },
     {
       label: "Avg Trade Size",
       value: fmtUsd(stats.avgSize),
-      sub:   "per trade",
-      icon:  BarChart3,
+      sub:   "avg per BUY",
+      icon:  (col: string) => <IconScale color={col} />,
       color: C.accent,
     },
     {
@@ -516,7 +574,7 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
         ? stats.mostTraded.slice(0, 22) + "…"
         : stats.mostTraded,
       sub:   stats.mostTradedCount > 0 ? `${stats.mostTradedCount} trades` : "",
-      icon:  Target,
+      icon:  (col: string) => <IconFlame color={col} />,
       color: C.accent,
     },
   ];
@@ -606,7 +664,6 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
         gap: 16, marginBottom: 20,
       }}>
         {KPI.map((k, ki) => {
-          const Icon = k.icon;
           return (
             <div key={k.label} className="pw-up" style={{
               ...glass({ padding: "22px 22px 18px" }),
@@ -631,7 +688,7 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
                   background: `${k.color}12`, border: `1px solid ${k.color}22`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <Icon size={17} color={k.color} strokeWidth={2.2} />
+                  {k.icon(k.color)}
                 </div>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: C.textSecondary }}>
                   {k.label}
@@ -750,7 +807,7 @@ export default function TradeHistoryClient({ data }: { data: TradeHistoryData })
               alignItems: "center", justifyContent: "center",
               gap: 8, padding: "56px 16px",
             }}>
-              <Activity size={32} color={C.textMuted} strokeWidth={1.5} />
+              <svg width="32" height="32" viewBox="0 0 20 20" fill="none"><rect x="2" y="7" width="7" height="7" rx="1.5" transform="rotate(-45 5.5 10.5)" stroke={C.textMuted} strokeWidth="1.4"/><rect x="2" y="7" width="7" height="7" rx="1.5" transform="rotate(-45 5.5 10.5) translate(8 0)" stroke={C.textMuted} strokeWidth="1.4" opacity="0.45"/><path d="M9.5 10H14.5" stroke={C.textMuted} strokeWidth="1.3" strokeLinecap="round" opacity="0.5"/><path d="M12.5 8L14.5 10L12.5 12" stroke={C.textMuted} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/></svg>
               <p style={{ fontSize: 15, fontWeight: 600, color: C.textMuted, margin: 0 }}>
                 No trades found
               </p>

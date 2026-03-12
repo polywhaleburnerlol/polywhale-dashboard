@@ -4,7 +4,6 @@ import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import { removeClient } from "@/app/actions/client";
 import {
-  Wallet, TrendingUp, BarChart2, Radio, DollarSign, Layers,
   ArrowUpRight, ArrowDownRight, Copy, Check,
   ExternalLink, ChevronRight, Trash2, RefreshCw,
 } from "lucide-react";
@@ -236,7 +235,7 @@ function InvestmentChart({ points }: { points: ChartPoint[] }) {
         borderRadius: 12, border: `1px dashed rgba(0,229,204,0.10)`,
         minHeight: 180,
       }}>
-        <TrendingUp size={28} color="#3d4d63" strokeWidth={1.5} />
+        <svg width="28" height="28" viewBox="0 0 20 20" fill="none"><path d="M10 16V4" stroke="#3d4d63" strokeWidth="1.5" strokeLinecap="round"/><path d="M6 8L10 4L14 8" stroke="#3d4d63" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M4 12H7.5" stroke="#3d4d63" strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/><path d="M12.5 12H16" stroke="#3d4d63" strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/></svg>
         <p style={{ fontSize: 13, fontWeight: 600, color: "#3d4d63", margin: 0 }}>
           No trades yet
         </p>
@@ -409,6 +408,68 @@ function InvestmentChart({ points }: { points: ChartPoint[] }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════ */
+/*  CUSTOM KPI ICONS — hand-crafted SVGs, not generic library icons           */
+/* ══════════════════════════════════════════════════════════════════════════ */
+
+/** Total Balance — hexagonal vault (Polygon/on-chain USDC) */
+function IconVault({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <path d="M10 1.5L17.5 5.75V14.25L10 18.5L2.5 14.25V5.75L10 1.5Z"
+            stroke={color} strokeWidth="1.45" strokeLinejoin="round"/>
+      <path d="M10 6V14" stroke={color} strokeWidth="1.45" strokeLinecap="round"/>
+      <path d="M7 8C7 6.9 8.2 6.5 10 6.5C11.8 6.5 13 7 13 8C13 9.2 11.2 9.6 10 9.6C8.5 9.6 7 10 7 11.2C7 12.4 8.2 13 10 13C11.8 13 13 12.5 13 11.6"
+            stroke={color} strokeWidth="1.45" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+/** Total Invested — capital arrow launching upward through twin rails */
+function IconCapital({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <path d="M10 16V4" stroke={color} strokeWidth="1.5" strokeLinecap="round"/>
+      <path d="M6 8L10 4L14 8" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M4 12H7.5" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/>
+      <path d="M12.5 12H16" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.55"/>
+      <path d="M4 15H7" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.3"/>
+      <path d="M13 15H16" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.3"/>
+    </svg>
+  );
+}
+
+/** Mirrored Trades — two offset diamonds linked by a copy arrow */
+function IconMirror({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <rect x="2" y="7" width="7" height="7" rx="1.5"
+            transform="rotate(-45 5.5 10.5)"
+            stroke={color} strokeWidth="1.4"/>
+      <rect x="2" y="7" width="7" height="7" rx="1.5"
+            transform="rotate(-45 5.5 10.5) translate(8 0)"
+            stroke={color} strokeWidth="1.4" opacity="0.45"/>
+      <path d="M9.5 10H14.5" stroke={color} strokeWidth="1.3" strokeLinecap="round" opacity="0.5"/>
+      <path d="M12.5 8L14.5 10L12.5 12" stroke={color} strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" opacity="0.5"/>
+    </svg>
+  );
+}
+
+/** Engine Status — radial signal broadcast */
+function IconPulse({ color }: { color: string }) {
+  return (
+    <svg width="19" height="19" viewBox="0 0 20 20" fill="none">
+      <circle cx="10" cy="10" r="2.2" fill={color}/>
+      <path d="M6 6.5C4.8 7.7 4 9.3 4 11" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.45"/>
+      <path d="M14 6.5C15.2 7.7 16 9.3 16 11" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.45"/>
+      <path d="M3.5 4C1.8 5.8 0.8 8.3 0.8 11" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.2"/>
+      <path d="M16.5 4C18.2 5.8 19.2 8.3 19.2 11" stroke={color} strokeWidth="1.2" strokeLinecap="round" opacity="0.2"/>
+      <path d="M10 12.5V17" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.35"/>
+      <path d="M7.5 17H12.5" stroke={color} strokeWidth="1.35" strokeLinecap="round" opacity="0.35"/>
+    </svg>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN COMPONENT                                                           */
 /* ══════════════════════════════════════════════════════════════════════════ */
 
@@ -452,7 +513,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
       sub:    "on-chain USDC",
       change: totalBalanceUsd > 0 ? "Live" : "No wallets",
       up:     totalBalanceUsd > 0,
-      icon:   Wallet,
+      icon:   (col: string) => <IconVault color={col} />,
       color:  C.accent,
     },
     {
@@ -463,7 +524,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
         ? `across ${totalTradeCount} trade${totalTradeCount === 1 ? "" : "s"}`
         : "No trades yet",
       up:    data.totalInvestedUsd > 0,
-      icon:  TrendingUp,
+      icon:  (col: string) => <IconCapital color={col} />,
       color: C.green,
     },
     {
@@ -472,7 +533,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
       sub:    "Lifetime",
       change: totalTradeCount > 0 ? `${Math.min(totalTradeCount, 18)} this week` : "None yet",
       up:    totalTradeCount > 0,
-      icon:  BarChart2,
+      icon:  (col: string) => <IconMirror color={col} />,
       color: C.accentAlt,
     },
     {
@@ -481,7 +542,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
       sub:    engineSub,
       change: engineChange,
       up:     engineStatus === "online",
-      icon:   Radio,
+      icon:   (col: string) => <IconPulse color={col} />,
       color:  engineColor,
       pulse:  engineStatus === "online",
     },
@@ -563,7 +624,6 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
         gap: 16, marginBottom: 20,
       }}>
         {KPI.map((k, ki) => {
-          const Icon = k.icon;
           return (
             <div key={k.label} className="pw-up" style={{
               ...glass({ padding: "22px 22px 18px" }),
@@ -588,7 +648,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
                   background: `${k.color}12`, border: `1px solid ${k.color}22`,
                   display: "flex", alignItems: "center", justifyContent: "center",
                 }}>
-                  <Icon size={17} color={k.color} strokeWidth={2.2} />
+                  {k.icon(k.color)}
                 </div>
                 <span style={{ fontSize: 12.5, fontWeight: 600, color: C.textSecondary }}>
                   {k.label}
@@ -711,7 +771,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
                 gap: 8, padding: "24px 16px",
                 borderRadius: 12, border: `1px dashed ${C.glassBorder}`,
               }}>
-                <Wallet size={24} color={C.textMuted} />
+                <svg width="24" height="24" viewBox="0 0 20 20" fill="none"><path d="M10 1.5L17.5 5.75V14.25L10 18.5L2.5 14.25V5.75L10 1.5Z" stroke={C.textMuted} strokeWidth="1.45" strokeLinejoin="round"/><path d="M10 6V14" stroke={C.textMuted} strokeWidth="1.45" strokeLinecap="round"/><path d="M7 8C7 6.9 8.2 6.5 10 6.5C11.8 6.5 13 7 13 8C13 9.2 11.2 9.6 10 9.6C8.5 9.6 7 10 7 11.2C7 12.4 8.2 13 10 13C11.8 13 13 12.5 13 11.6" stroke={C.textMuted} strokeWidth="1.45" strokeLinecap="round"/></svg>
                 <p style={{ fontSize: 13, color: C.textMuted, textAlign: "center" }}>
                   No wallets connected yet.
                 </p>
@@ -858,7 +918,7 @@ export default function DashboardOverviewClient({ data }: { data: DashboardData 
               alignItems: "center", justifyContent: "center",
               gap: 8, padding: "40px 16px",
             }}>
-              <BarChart2 size={28} color={C.textMuted} strokeWidth={1.5} />
+              <svg width="28" height="28" viewBox="0 0 20 20" fill="none"><rect x="3" y="7" width="14" height="10" rx="2" stroke={C.textMuted} strokeWidth="1.4"/><path d="M3 10H17" stroke={C.textMuted} strokeWidth="1.2" opacity="0.35"/><path d="M6 3H14" stroke={C.textMuted} strokeWidth="1.4" strokeLinecap="round" opacity="0.5"/><path d="M7 13.5H10" stroke={C.textMuted} strokeWidth="1.4" strokeLinecap="round" opacity="0.6"/></svg>
               <p style={{ fontSize: 14, color: C.textMuted }}>No trades recorded yet.</p>
               <p style={{ fontSize: 12, color: C.textMuted }}>
                 Trades will appear here once the engine mirrors a whale position.
