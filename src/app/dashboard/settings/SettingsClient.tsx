@@ -3,10 +3,10 @@
 import { useState, useTransition, useCallback } from "react";
 import Link from "next/link";
 import {
-  Copy, Check, Trash2, Plus, Eye, Server, Wifi,
-  ChevronRight, Info, Shield,
+  Copy, Check, Trash2, Plus, Eye, Server,
+  Info, Shield,
 } from "lucide-react";
-import { addWhaleAddress, removeWhaleAddress } from "@/app/actions/client";
+import { toggleClientActive } from "@/app/actions/client";
 
 /* ══════════════════════════════════════════════════════════════════════════ */
 /*  TYPES                                                                    */
@@ -37,6 +37,7 @@ export type BotConfig = {
 export type SettingsData = {
   clients: ClientSummary[];
   whaleAddresses: WhaleEntry[];
+  envWhaleAddresses: string[];
   lastHeartbeatIso: string | null;
   botConfig: BotConfig;
 };
@@ -238,15 +239,15 @@ function StatusDot({ color, pulse }: { color: string; pulse: boolean }) {
 /* ══════════════════════════════════════════════════════════════════════════ */
 
 export default function SettingsClient({ data }: { data: SettingsData }) {
-  const { clients, botConfig, lastHeartbeatIso } = data;
+  const { clients, botConfig, lastHeartbeatIso, envWhaleAddresses } = data;
+
+  /* ── Client toggle state ───────────────────────────────────────────── */
+  const [clientList, setClientList] = useState(clients);
+  const [togglingId, setTogglingId] = useState<string | null>(null);
 
   /* ── Whale state ────────────────────────────────────────────────────── */
   const [whales, setWhales]           = useState(data.whaleAddresses);
   const [removingWhale, setRemovingWhale] = useState<string | null>(null);
-  const [addingWhale, setAddingWhale] = useState(false);
-  const [newAddress, setNewAddress]   = useState("");
-  const [newLabel, setNewLabel]       = useState("");
-  const [addError, setAddError]       = useState("");
   const [, startTransition]           = useTransition();
 
   /* ── Engine status — same logic as DashboardOverviewClient ──────────── */
@@ -259,45 +260,13 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
   const engineLabel = { online: "Online", stale: "Stale", unknown: "Unknown" }[engineStatus];
 
   /* ── Whale handlers ─────────────────────────────────────────────────── */
-  const handleAddWhale = useCallback(() => {
-    const addr = newAddress.trim().toLowerCase();
-    if (!addr.startsWith("0x") || addr.length !== 42) {
-      setAddError("Must be a valid 42-character Ethereum address (0x…).");
-      return;
+  const handleToggleClient = useCallback(async (id: string, currentActive: boolean) => {
+    setTogglingId(id);
+    const result = await toggleClientActive(id, !currentActive);
+    if (result.success) {
+      setClientList(prev => prev.map(c => c.id === id ? { ...c, is_active: !currentActive } : c));
     }
-    if (whales.some(w => w.address.toLowerCase() === addr)) {
-      setAddError("This address is already in the watchlist.");
-      return;
-    }
-    setAddError("");
-    setAddingWhale(true);
-    startTransition(async () => {
-      const result = await addWhaleAddress(addr, newLabel.trim());
-      if (result.success) {
-        setWhales(prev => [...prev, {
-          id: result.whaleId,
-          address: addr,
-          label: newLabel.trim(),
-          added_at: new Date().toISOString(),
-        }]);
-        setNewAddress("");
-        setNewLabel("");
-      } else {
-        setAddError(result.error);
-      }
-      setAddingWhale(false);
-    });
-  }, [newAddress, newLabel, whales]);
-
-  const handleRemoveWhale = useCallback((id: string) => {
-    setRemovingWhale(id);
-    startTransition(async () => {
-      const result = await removeWhaleAddress(id);
-      if (result.success) {
-        setWhales(prev => prev.filter(w => w.id !== id));
-      }
-      setRemovingWhale(null);
-    });
+    setTogglingId(null);
   }, []);
 
   /* ── Config rows ────────────────────────────────────────────────────── */
@@ -365,169 +334,45 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
         <SectionLabel
           icon={<Eye size={17} color={C.accent} strokeWidth={2.2} />}
           title="Watched Whales"
-          subtitle="Polygon wallet addresses the engine monitors for trades"
+          subtitle="These Polygon wallets are actively monitored — when they trade, the bot mirrors it into your account"
         />
 
-        {whales.length === 0 ? (
-          /* ── Empty state ─────────────────────────────────────────────── */
+        {envWhaleAddresses.length === 0 ? (
           <div style={{
-            display: "flex", flexDirection: "column", alignItems: "center",
-            justifyContent: "center", gap: 8, padding: "36px 16px",
-            borderRadius: 12, border: `1px dashed rgba(0,229,204,0.10)`,
+            padding: "20px 16px", borderRadius: 10,
+            background: "rgba(255,255,255,0.02)", border: "1px dashed rgba(255,255,255,0.06)",
+            textAlign: "center",
           }}>
-            <Eye size={28} color={C.textMuted} strokeWidth={1.5} />
-            <p style={{ fontSize: 14, fontWeight: 600, color: C.textMuted, margin: 0 }}>
-              No whale addresses in database yet
-            </p>
-            <p style={{ fontSize: 12, color: C.textMuted, textAlign: "center", maxWidth: 380, lineHeight: 1.6 }}>
-              Whale addresses are currently configured via the <span style={{ fontFamily: "monospace", fontSize: 11.5, color: C.textSecondary }}>WHALE_ADDRESSES</span> environment variable.
-              Add them below to manage from the dashboard instead.
+            <p style={{ fontSize: 13, color: C.textMuted }}>
+              No whale addresses found. Set <span style={{ fontFamily: "monospace", color: C.textSecondary }}>WHALE_ADDRESSES</span> in your bot's <span style={{ fontFamily: "monospace", color: C.textSecondary }}>.env</span> file as a comma-separated list of Polygon wallet addresses.
             </p>
           </div>
         ) : (
-          /* ── Whale list ──────────────────────────────────────────────── */
-          <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
-            {whales.map((w, i) => (
-              <div key={w.id} style={{
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            {envWhaleAddresses.map((addr, i) => (
+              <div key={addr} style={{
                 display: "flex", alignItems: "center", justifyContent: "space-between",
-                padding: "12px 0",
-                borderBottom: i < whales.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
-                opacity: removingWhale === w.id ? 0.4 : 1,
-                transition: "opacity 0.2s",
+                padding: "11px 0",
+                borderBottom: i < envWhaleAddresses.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
               }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <span style={{
-                    fontSize: 13, fontWeight: 600, color: C.textPrimary, fontFamily: "monospace",
-                  }}>
-                    {truncAddr(w.address)}
+                    width: 7, height: 7, borderRadius: "50%",
+                    background: C.accent, flexShrink: 0, opacity: 0.7,
+                  }} />
+                  <span style={{ fontSize: 13, fontWeight: 500, color: C.textPrimary, fontFamily: "monospace" }}>
+                    {addr}
                   </span>
-                  <CopyButton text={w.address} />
-                  {w.label && (
-                    <span style={{
-                      fontSize: 11, fontWeight: 600, color: C.accentAlt,
-                      background: `${C.accentAlt}12`, border: `1px solid ${C.accentAlt}22`,
-                      padding: "2px 8px", borderRadius: 6,
-                    }}>
-                      {w.label}
-                    </span>
-                  )}
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ fontSize: 11, color: C.textMuted }}>
-                    {w.added_at ? timeAgo(w.added_at) : ""}
-                  </span>
-                  <RemoveButton
-                    itemId={w.id}
-                    onConfirm={handleRemoveWhale}
-                    disabled={removingWhale === w.id}
-                  />
-                </div>
+                <CopyButton text={addr} />
               </div>
             ))}
           </div>
         )}
 
-        {/* ── Add whale form ───────────────────────────────────────────── */}
-        <div style={{
-          marginTop: 16, paddingTop: 16,
-          borderTop: "1px solid rgba(255,255,255,0.04)",
-        }}>
-          <div style={{
-            display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap",
-          }}>
-            {/* Address input */}
-            <div style={{ flex: "1 1 280px", minWidth: 200 }}>
-              <label style={{
-                display: "block", fontSize: 10.5, fontWeight: 700,
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                color: C.textMuted, marginBottom: 6,
-              }}>
-                Wallet Address
-              </label>
-              <input
-                type="text"
-                placeholder="0x…"
-                value={newAddress}
-                onChange={e => { setNewAddress(e.target.value); setAddError(""); }}
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, fontFamily: "monospace",
-                  color: C.textPrimary,
-                  background: "rgba(255,255,255,0.03)",
-                  border: `1px solid ${addError ? `${C.red}40` : "rgba(255,255,255,0.08)"}`,
-                  outline: "none", transition: "border-color 0.15s",
-                }}
-                onFocus={e => { e.currentTarget.style.borderColor = `${C.accent}40`; }}
-                onBlur={e => { e.currentTarget.style.borderColor = addError ? `${C.red}40` : "rgba(255,255,255,0.08)"; }}
-              />
-            </div>
-
-            {/* Label input */}
-            <div style={{ flex: "0 1 160px", minWidth: 120 }}>
-              <label style={{
-                display: "block", fontSize: 10.5, fontWeight: 700,
-                letterSpacing: "0.08em", textTransform: "uppercase",
-                color: C.textMuted, marginBottom: 6,
-              }}>
-                Label <span style={{ opacity: 0.5 }}>(optional)</span>
-              </label>
-              <input
-                type="text"
-                placeholder="e.g. GCR"
-                value={newLabel}
-                onChange={e => setNewLabel(e.target.value)}
-                style={{
-                  width: "100%", padding: "8px 12px", borderRadius: 8,
-                  fontSize: 13, fontWeight: 500, fontFamily: "inherit",
-                  color: C.textPrimary,
-                  background: "rgba(255,255,255,0.03)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  outline: "none", transition: "border-color 0.15s",
-                }}
-                onFocus={e => { e.currentTarget.style.borderColor = `${C.accent}40`; }}
-                onBlur={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.08)"; }}
-              />
-            </div>
-
-            {/* Add button */}
-            <button
-              onClick={handleAddWhale}
-              disabled={addingWhale || !newAddress.trim()}
-              style={{
-                display: "flex", alignItems: "center", gap: 5,
-                padding: "8px 16px", borderRadius: 8,
-                fontSize: 12.5, fontWeight: 600,
-                color: addingWhale || !newAddress.trim() ? C.textMuted : C.accent,
-                background: addingWhale || !newAddress.trim() ? "rgba(255,255,255,0.02)" : `${C.accent}10`,
-                border: `1px solid ${addingWhale || !newAddress.trim() ? "rgba(255,255,255,0.06)" : `${C.accent}30`}`,
-                cursor: addingWhale || !newAddress.trim() ? "not-allowed" : "pointer",
-                transition: "all 0.18s", flexShrink: 0,
-                opacity: addingWhale ? 0.5 : 1,
-              }}
-              onMouseEnter={e => {
-                if (!addingWhale && newAddress.trim()) {
-                  e.currentTarget.style.borderColor = C.glassBorderHover;
-                  e.currentTarget.style.background  = `${C.accent}18`;
-                }
-              }}
-              onMouseLeave={e => {
-                if (!addingWhale && newAddress.trim()) {
-                  e.currentTarget.style.borderColor = `${C.accent}30`;
-                  e.currentTarget.style.background  = `${C.accent}10`;
-                }
-              }}
-            >
-              <Plus size={14} />
-              {addingWhale ? "Adding…" : "Add Whale"}
-            </button>
-          </div>
-
-          {addError && (
-            <p style={{ marginTop: 8, fontSize: 12, color: C.red, fontWeight: 500 }}>
-              {addError}
-            </p>
-          )}
-        </div>
+        <p style={{ fontSize: 11, color: C.textMuted, marginTop: 16, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+          To add or remove watched whales, update <span style={{ fontFamily: "monospace", color: C.textSecondary }}>WHALE_ADDRESSES</span> in your bot's environment and restart the process.
+        </p>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════
@@ -541,26 +386,27 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
             subtitle="Connected client wallets and their trade configuration"
           />
           <Link href="/dashboard/clients/new" style={{
-            display: "flex", alignItems: "center", gap: 5,
-            padding: "6px 14px", borderRadius: 9,
-            fontSize: 12, fontWeight: 600, color: C.textSecondary,
-            background: "rgba(255,255,255,0.03)",
-            border: `1px solid ${C.glassBorder}`,
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 16px", borderRadius: 9,
+            fontSize: 12.5, fontWeight: 700,
+            color: C.bg,
+            background: C.accent,
+            border: `1px solid ${C.accent}`,
             textDecoration: "none", transition: "all 0.18s",
-            flexShrink: 0,
+            flexShrink: 0, letterSpacing: "0.01em",
           }}
             onMouseEnter={e => {
               const el = e.currentTarget as HTMLAnchorElement;
-              el.style.borderColor = C.glassBorderHover;
-              el.style.color       = C.accent;
+              el.style.background = "#00ccb5";
+              el.style.boxShadow  = `0 0 20px -4px ${C.accent}60`;
             }}
             onMouseLeave={e => {
               const el = e.currentTarget as HTMLAnchorElement;
-              el.style.borderColor = C.glassBorder;
-              el.style.color       = C.textSecondary;
+              el.style.background = C.accent;
+              el.style.boxShadow  = "none";
             }}
           >
-            Manage <ChevronRight size={14} />
+            <Plus size={13} /> Add Client
           </Link>
         </div>
 
@@ -597,7 +443,7 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
                 </tr>
               </thead>
               <tbody>
-                {clients.map(c => (
+                {clientList.map(c => (
                   <tr key={c.id}
                     style={{ transition: "background 0.15s" }}
                     onMouseEnter={e => {
@@ -637,20 +483,39 @@ export default function SettingsClient({ data }: { data: SettingsData }) {
                       padding: "13px 0",
                       borderBottom: "1px solid rgba(255,255,255,0.03)",
                     }}>
-                      <span style={{
-                        display: "inline-flex", alignItems: "center", gap: 5,
-                        padding: "4px 10px", borderRadius: 8,
-                        fontSize: 12, fontWeight: 600,
-                        background: c.is_active ? `${C.green}12` : "rgba(255,255,255,0.03)",
-                        color: c.is_active ? C.green : C.textMuted,
-                        border: `1px solid ${c.is_active ? `${C.green}28` : "rgba(255,255,255,0.06)"}`,
-                      }}>
+                      <button
+                        onClick={() => handleToggleClient(c.id, c.is_active)}
+                        disabled={togglingId === c.id}
+                        title={c.is_active ? "Click to deactivate" : "Click to activate"}
+                        style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "5px 11px", borderRadius: 8,
+                          fontSize: 12, fontWeight: 600, cursor: "pointer",
+                          background: c.is_active ? `${C.green}12` : "rgba(255,255,255,0.03)",
+                          color: c.is_active ? C.green : C.textMuted,
+                          border: `1px solid ${c.is_active ? `${C.green}28` : "rgba(255,255,255,0.08)"}`,
+                          transition: "all 0.18s", opacity: togglingId === c.id ? 0.5 : 1,
+                        }}
+                        onMouseEnter={e => {
+                          const el = e.currentTarget as HTMLButtonElement;
+                          el.style.background = c.is_active ? `${C.red}12` : `${C.green}12`;
+                          el.style.color      = c.is_active ? C.red : C.green;
+                          el.style.borderColor = c.is_active ? `${C.red}30` : `${C.green}30`;
+                        }}
+                        onMouseLeave={e => {
+                          const el = e.currentTarget as HTMLButtonElement;
+                          el.style.background = c.is_active ? `${C.green}12` : "rgba(255,255,255,0.03)";
+                          el.style.color      = c.is_active ? C.green : C.textMuted;
+                          el.style.borderColor = c.is_active ? `${C.green}28` : "rgba(255,255,255,0.08)";
+                        }}
+                      >
                         <span style={{
                           width: 6, height: 6, borderRadius: "50%",
                           background: c.is_active ? C.green : C.textMuted,
+                          transition: "background 0.18s",
                         }} />
-                        {c.is_active ? "Active" : "Inactive"}
-                      </span>
+                        {togglingId === c.id ? "…" : c.is_active ? "Active" : "Inactive"}
+                      </button>
                     </td>
                   </tr>
                 ))}

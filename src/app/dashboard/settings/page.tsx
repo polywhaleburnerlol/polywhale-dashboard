@@ -24,6 +24,7 @@ export default async function SettingsPage() {
   const empty: SettingsData = {
     clients: [],
     whaleAddresses: [],
+    envWhaleAddresses: [],
     lastHeartbeatIso: null,
     botConfig: {
       dedupWindowMs: 10000,
@@ -87,6 +88,12 @@ export default async function SettingsPage() {
   }
 
   /* ── 4. Bot config from env vars ────────────────────────────────────── */
+  /* ── 5. Parse WHALE_ADDRESSES env var ──────────────────────────────── */
+  const envWhaleAddresses: string[] = (process.env.WHALE_ADDRESSES ?? "")
+    .split(",")
+    .map(a => a.trim().toLowerCase())
+    .filter(a => a.startsWith("0x") && a.length === 42);
+
   const botConfig = {
     dedupWindowMs:  safeNum(process.env.DEDUP_WINDOW_MS)  || 10000,
     maxSlippagePct: parseFloat(process.env.MAX_SLIPPAGE_PCT ?? "") || 0.02,
@@ -112,7 +119,7 @@ export default async function SettingsPage() {
 
   return (
     <SettingsClient
-      data={{ clients, whaleAddresses, lastHeartbeatIso, botConfig }}
+      data={{ clients, whaleAddresses, envWhaleAddresses, lastHeartbeatIso, botConfig }}
     />
   );
 }

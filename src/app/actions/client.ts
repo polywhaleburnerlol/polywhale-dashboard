@@ -237,3 +237,23 @@ export async function removeWhaleAddress(
   revalidatePath("/dashboard/settings");
   return { success: true };
 }
+
+export type ToggleResult =
+  | { success: true }
+  | { success: false; error: string };
+
+export async function toggleClientActive(
+  clientId: string,
+  isActive: boolean
+): Promise<ToggleResult> {
+  if (!clientId) return { success: false, error: "Missing client ID." };
+  const supabase = getSupabaseAdmin();
+  const { error } = await supabase
+    .from("clients")
+    .update({ is_active: isActive })
+    .eq("id", clientId);
+  if (error) return { success: false, error: `Database error: ${error.message}` };
+  revalidatePath("/dashboard/settings");
+  revalidatePath("/dashboard");
+  return { success: true };
+}
