@@ -221,7 +221,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
         {/* ═══ SIDEBAR ════════════════════════════════════════════════════════ */}
         <aside
           className="pw-sidebar"
-          style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column" }}
+          style={{ width: 236, flexShrink: 0, display: "flex", flexDirection: "column", height: "100vh", position: "sticky", top: 0, overflow: "hidden" }}
         >
           <div style={{
             display: "flex", alignItems: "center", gap: 10,
@@ -268,7 +268,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             </div>
           </div>
 
-          <nav style={{ flex: 1, overflowY: "auto", padding: "16px 10px 8px" }}>
+          <nav style={{ flex: 1, overflowY: "auto", padding: "16px 10px 8px", minHeight: 0 }}>
             <p style={{
               fontSize: 10, fontWeight: 700, letterSpacing: "0.10em",
               textTransform: "uppercase", color: "#3d4d63", padding: "0 8px 8px",
@@ -289,7 +289,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
           </nav>
 
           <div style={{ padding: "14px 18px 20px", borderTop: "1px solid rgba(0,229,204,0.07)" }}>
-            <Link href="/" className="pw-back" style={{ marginBottom: 12 }}>
+            <Link href="https://polywhale-plum.vercel.app/" className="pw-back" style={{ marginBottom: 12 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                 stroke="currentColor" strokeWidth={2.5} strokeLinecap="round">
                 <path d="M19 12H5M5 12l7 7M5 12l7-7" />
