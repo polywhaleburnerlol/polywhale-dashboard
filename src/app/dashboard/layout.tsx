@@ -5,6 +5,7 @@ import { ActiveNavLink } from "@/components/ActiveNavLink";
 import { PolygonMeshBackground } from "@/components/PolygonMeshBackground";
 import { createSupabaseServerClient } from "@/utils/supabase/server";
 import { createClient } from "@supabase/supabase-js";
+import { signOut } from "@/app/actions/auth";
 
 /**
  * src/app/dashboard/layout.tsx
@@ -295,6 +296,26 @@ export default async function DashboardLayout({ children }: { children: ReactNod
               </svg>
               Back to Site
             </Link>
+
+            {/* Sign Out */}
+            <form action={signOut}>
+              <button type="submit" style={{
+                width: "100%", display: "flex", alignItems: "center", gap: 8,
+                padding: "8px 10px", borderRadius: 9, marginBottom: 12,
+                background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.14)",
+                color: "#f87171", fontSize: 13, fontWeight: 600, cursor: "pointer",
+                transition: "all 0.18s", textAlign: "left",
+              }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none"
+                  stroke="currentColor" strokeWidth={2.2} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4" />
+                  <polyline points="16 17 21 12 16 7" />
+                  <line x1="21" y1="12" x2="9" y2="12" />
+                </svg>
+                Sign Out
+              </button>
+            </form>
+
             <p style={{ fontSize: 10.5, lineHeight: 1.6, color: "#3d4d63" }}>
               AES-256-GCM · Polygon Mainnet<br />Not financial advice.
             </p>
