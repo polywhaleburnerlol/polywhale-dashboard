@@ -307,15 +307,7 @@ function LoginContent() {
           {/* Logotype */}
           <div style={{ textAlign: "center", marginBottom: 28 }}>
             <div style={{ display: "inline-flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-              <div style={{
-                width: 38, height: 38, borderRadius: 11, flexShrink: 0,
-                background: "linear-gradient(135deg, #00e5cc, #7c5cfc)",
-                display: "flex", alignItems: "center", justifyContent: "center",
-              }}>
-                <svg width="20" height="20" viewBox="0 0 32 32" fill="#060b18">
-                  <path d="M28 14c0-6.627-5.373-12-12-12C9.791 2 7 4 5 7c-1 1.5-1.5 3-1.5 5 0 1.5.3 2.9.8 4.2C3.1 17.5 2 19.6 2 22c0 4.4 3.6 8 8 8h14c3.3 0 6-2.7 6-6 0-1.9-.9-3.6-2.2-4.7.1-.4.2-.9.2-1.3zm-6 4a2 2 0 100-4 2 2 0 000 4z" />
-                </svg>
-              </div>
+              <img src="/whale-logo.png" alt="PolyWhale" style={{ height: 38, width: "auto", objectFit: "contain", display: "block", flexShrink: 0 }} />
               <span style={{
                 fontFamily: "'Syne', sans-serif", fontSize: 22, fontWeight: 800,
                 letterSpacing: "-0.02em", color: "#fff",
