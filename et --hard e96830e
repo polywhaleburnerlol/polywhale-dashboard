@@ -1,0 +1,69 @@
+[33m0340966[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m, [m[1;31morigin/HEAD[m[33m)[m sdhfjds
+[33m7b1415d[m qwjhjketrw
+[33m891e128[m please
+[33md57708c[m inshallah
+[33m44d5e84[m revert
+[33m33bbcb8[m new logo
+[33me96830e[m lol
+[33mff98558[m fixes sign out
+[33mf686396[m sign out option
+[33md88f9a0[m add subscription gate
+[33m28213e3[m whatever
+[33m59519ae[m whatever
+[33m54a027b[m bug fix and better layout
+[33mdf069f6[m bug fixes for whale watched
+[33ma961e42[m bug fix on settings
+[33m3773e46[m settings page
+[33mf5f8d3c[m new icons
+[33ma5742cd[m updates
+[33m5af8f82[m extra fix
+[33m6492eaf[m custom drop down
+[33me345093[m trade history
+[33m6a109db[m new dashboard
+[33mb5df59c[m mashallah
+[33m7b5f7f1[m lol
+[33m3d6ad6a[m bug fix
+[33m5d17573[m updates
+[33m7ae96b9[m fixes
+[33maf4c306[m layout and stat fixes
+[33m9cf71be[m fix: restore supabase client, add removeClient
+[33mfdbe861[m fix: removeClient + real data
+[33m70f3ce9[m trigger redeploy
+[33m5266685[m feat: real USDC balance, remove wallet, no mock data
+[33mc59e52a[m fix: RPC fallbacks for USDC balance fetch
+[33m7970316[m feat: real on-chain USDC balance from Polygon RPC
+[33mc1ae9c2[m fix: revalidate dashboard overview after client insert
+[33m1f6ff7a[m client.ts bug fix
+[33m4f52203[m ooga
+[33m6d1fda6[m analysis
+[33mbe047bb[m random lol
+[33ma50daee[m fix: force dynamic rendering on dashboard
+[33m5c78e1a[m random
+[33m8d435b5[m feat: added stripe webhook and updated ui
+[33m09eec53[m fix: added dashboard stub and fixed redirect loop
+[33mf1e0a74[m fix: definitive diagnostic fix and recovery
+[33m7d40b76[m fix: added dashboard stub and fixed redirect loop
+[33m7f6f720[m fix: added dashboard stub and fixed redirect loop
+[33mea42dd6[m fix: removed conflicting auth check to stop redirect loop
+[33m10b091b[m fix: total project sync and recovery
+[33m783c2d3[m randomlol
+[33me212bcd[m random
+[33mbddcc3f[m feat: unified dashboard layout and restored premium styling3
+[33mc3dff47[m feat: unified dashboard layout and restored premium styling2
+[33md138a65[m feat: unified dashboard layout and restored premium styling
+[33mf3da330[m fixing bugs
+[33m0a4d82d[m fix: clean rewrite of login page with proper suspense boundary2
+[33m34f084d[m fix: wrapped login page searchparams in suspense
+[33m7065f0e[m feat: added supabase ssr auth and middleware firewall
+[33mfa156d8[m polygon mesh background
+[33ma27e34c[m random addition
+[33m6ac7e3b[m chore: remove vercel.json to restore automatic routing
+[33m8d993da[m feat: added flagship ambient whale sonar background
+[33m59b518a[m feat: premium additions
+[33m8af096d[m feat: premium polywhale ui sync
+[33m1aea3c0[m fix: tailwind v4 theme resolution in globals.css
+[33ma9f5bf5[m fix: final folder structure and layout split
+[33m517e4c3[m feat: professional landing page and sidebar layout
+[33m72cde39[m fix: add supabase dependency
+[33m55075fc[m initial dashboard setup
+[33m330a227[m Initial commit from Create Next App
