@@ -227,7 +227,7 @@ export default async function DashboardLayout({ children }: { children: ReactNod
             display: "flex", alignItems: "center", gap: 10,
             padding: "20px 20px 18px", borderBottom: "1px solid rgba(0,229,204,0.08)",
           }}>
-            <img src="/whale-logo.png" alt="PolyWhale" style={{ height: 28, width: "auto", objectFit: "contain", display: "block" }} />
+            <img src="/whale-logo.png" alt="PolyWhale" style={{ height: 24, width: "auto", maxWidth: 32, objectFit: "contain", display: "block" }} />
             <span className="pw-font-display" style={{
               fontSize: 19, fontWeight: 800, letterSpacing: "-0.02em", color: "#fff",
             }}>
